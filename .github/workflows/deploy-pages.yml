@@ -45,10 +45,9 @@ jobs:
       - name: Armar www/ desde la raíz
         run: node scripts/copy-web.mjs
 
+      # Requiere activar Pages una vez: Settings -> Pages -> Source: "GitHub Actions".
       - name: Configurar Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Subir artefacto
         uses: actions/upload-pages-artifact@v3
