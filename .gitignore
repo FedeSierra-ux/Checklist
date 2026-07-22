@@ -1,3 +1,20 @@
+# Node
 node_modules/
+npm-debug.log*
+
+# Capacitor build output (se regenera desde la raíz con: npm run copy:web)
+www/
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/local.properties
+*.apk
+*.aab
+.gradle/
+
+# Sistema
 .DS_Store
 *.log

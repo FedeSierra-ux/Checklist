@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pendientes</string>
+    <string name="title_activity_main">Pendientes</string>
+    <string name="package_name">com.pendientes.app</string>
+    <string name="custom_url_scheme">com.pendientes.app</string>
+    <string name="widget_desc">Tus pendientes de hoy en la pantalla de inicio</string>
+</resources>

@@ -1,0 +1,12 @@
+{
+  "appId": "com.pendientes.app",
+  "appName": "Pendientes",
+  "webDir": "www",
+  "backgroundColor": "#faf9f6",
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#a8683f"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "pendientes",
+  "version": "1.0.0",
+  "description": "App de tareas pendientes con prioridades, vista Hoy, subtareas, etiquetas, notificaciones y widget. Web (PWA) + Android (APK vía Capacitor).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "copy:web": "node scripts/copy-web.mjs",
+    "sync": "npm run copy:web && cap sync android",
+    "open:android": "cap open android",
+    "build:apk": "npm run sync && cd android && ./gradlew assembleDebug",
+    "build:apk:release": "npm run sync && cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/local-notifications": "^6.1.2",
+    "@capacitor/preferences": "^6.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

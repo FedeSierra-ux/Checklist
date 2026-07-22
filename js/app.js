@@ -466,6 +466,7 @@
   const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
   const LocalNotifications = () => Cap?.Plugins?.LocalNotifications;
   const Preferences = () => Cap?.Plugins?.Preferences;
+  const WidgetBridge = (isNative && Cap.registerPlugin) ? Cap.registerPlugin('WidgetBridge') : null;
 
   function reminderTime(t) {
     const dt = taskDate(t); if (!dt) return null;
@@ -515,7 +516,7 @@
     try {
       await Preferences().set({ key: 'widget_tasks', value: JSON.stringify(items) });
       await Preferences().set({ key: 'widget_updated', value: String(Date.now()) });
-      if (Cap?.Plugins?.WidgetBridge?.refresh) Cap.Plugins.WidgetBridge.refresh();
+      if (WidgetBridge?.refresh) WidgetBridge.refresh().catch(() => {});
     } catch (e) { /* silencioso */ }
   }
   // Al volver a la app, aplicar cambios hechos desde el widget (marcar hecho).
