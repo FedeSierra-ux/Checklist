@@ -12,6 +12,8 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+    # Disparo temporal para verificar la compilación firmada en esta rama.
+    branches: ["claude/task-app-notifications-t45sgh"]
 
 jobs:
   build:
