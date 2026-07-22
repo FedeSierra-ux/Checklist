@@ -5,7 +5,8 @@ name: Publicar PWA (GitHub Pages)
 
 on:
   push:
-    branches: ["main", "master"]
+    # Rama principal del repo (default). Incluye main/master por si se renombra.
+    branches: ["claude/task-app-notifications-t45sgh", "main", "master"]
     paths:
       - "index.html"
       - "css/**"
