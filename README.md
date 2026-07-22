@@ -30,8 +30,10 @@ python3 -m http.server 8000
 # abrí http://localhost:8000
 ```
 
-Publicala gratis en GitHub Pages / Netlify / Vercel apuntando a la **raíz** del
-repo. En el celular: Chrome/Safari → *Agregar a la pantalla de inicio*.
+**Publicada automáticamente**: el repo trae un workflow que la sube a GitHub
+Pages en `https://<usuario>.github.io/<repo>/`. Corré **Actions → "Publicar PWA
+(GitHub Pages)" → Run workflow** (la primera vez habilita Pages solo). En el
+celular: Chrome/Safari → *Agregar a la pantalla de inicio*.
 
 Limitación de la PWA: las notificaciones son **locales** (solo con la app abierta
 o en segundo plano) y **no** hay widget nativo. Para eso está el APK.
@@ -49,9 +51,17 @@ app web. Ventajas sobre la PWA:
 
 #### Opción A — Compilar en GitHub (sin instalar nada)
 
-Este repo trae un workflow de GitHub Actions. Andá a la pestaña **Actions →
-"Compilar APK" → Run workflow**. Al terminar, descargá el artefacto
-`pendientes-apk` (`app-debug.apk`) y pasalo a tu teléfono.
+Este repo trae workflows de GitHub Actions. En la pestaña **Actions**:
+
+- **"Compilar APK"** → artefacto `pendientes-apk` (`app-debug.apk`). Cero
+  configuración, ideal para probar.
+- **"Compilar APK firmado (release)"** → artefacto `pendientes-apk-release`
+  (`app-release.apk`), firmado e instalable como app definitiva. Si no cargás
+  una clave propia, genera una automática para esa corrida (para *actualizar* la
+  app sin desinstalar, cargá tu clave estable en los secrets del repo:
+  `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`).
+
+Descargá el artefacto y pasalo al teléfono.
 
 #### Opción B — Compilar en tu máquina
 

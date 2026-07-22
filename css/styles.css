@@ -97,7 +97,10 @@ button,input,select{font-family:inherit}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 .row:last-child{border-bottom:0}
 .ck{width:20px;height:20px;border-radius:50%;border:1.6px solid var(--ink2);flex:none;margin-top:1px;cursor:pointer;background:transparent;padding:0;position:relative;transition:.15s}
+/* área de toque más grande sin cambiar el tamaño visible */
+.ck::before{content:"";position:absolute;inset:-11px}
 .ck:hover{border-color:var(--accent)}
+.ck:active{transform:scale(.9)}
 .ck.done{background:var(--accent);border-color:var(--accent)}
 .ck.done::after{content:"";position:absolute;left:6.5px;top:3px;width:4px;height:9px;border:solid var(--panel);border-width:0 2px 2px 0;transform:rotate(43deg)}
 /* priority ring color on checkbox */
@@ -119,9 +122,14 @@ button,input,select{font-family:inherit}
 .subcount{font-size:11px;font-weight:600;color:var(--ink2);display:inline-flex;align-items:center;gap:4px;background:none;border:0;padding:0;cursor:pointer}
 .subcount:hover{color:var(--accent)}
 .subcount svg{opacity:.8}
-.row .del{position:absolute;top:8px;right:0;width:26px;height:26px;border:0;background:transparent;color:var(--ink2);opacity:0;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
-.row:hover .del{opacity:.55}
-.row .del:hover{opacity:1;color:var(--p3)}
+/* Borrado rápido inline: solo en dispositivos con mouse (en el teléfono se
+   borra desde el editor). Fondo sólido para no taparse con la hora. */
+.row .del{display:none}
+@media (hover:hover){
+  .row .del{position:absolute;top:6px;right:0;width:28px;height:28px;border:0;background:var(--panel);color:var(--ink2);opacity:0;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .15s,color .15s;box-shadow:-8px 0 8px -4px var(--panel)}
+  .row:hover .del{opacity:.6}
+  .row .del:hover{opacity:1;color:var(--p3)}
+}
 
 /* Subtask list (expanded under a task) */
 .subs{margin:4px 0 2px 32px;display:flex;flex-direction:column;gap:2px}
@@ -218,6 +226,7 @@ button,input,select{font-family:inherit}
 .btn{flex:1;border:0;border-radius:13px;padding:14px;font-size:15px;font-weight:700;cursor:pointer}
 .btn.ghost{background:var(--line-soft);color:var(--ink)}
 .btn.primary{background:var(--accent);color:var(--panel)}
+.btn.danger-icon{flex:none;width:52px;background:var(--p3-soft);color:var(--p3);display:flex;align-items:center;justify-content:center}
 .btn:active{transform:scale(.98)}
 
 /* Toast */

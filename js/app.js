@@ -357,12 +357,14 @@
     draftSubs = t ? (t.subtasks || []).map(s => ({ ...s })) : [];
     renderDraftSubs();
     $('#parseHint').textContent = '';
+    $('#sheetDelete').hidden = !id;
     showSheet(); setTimeout(() => $('#fTitle').focus(), 250);
   }
   function openListSheet() {
     $('.task-only').style.display = 'none';
     $('#sheetTitle').textContent = 'Nueva lista de compras';
     $('#fTitle').value = ''; $('#fTitle').placeholder = 'Ej: Supermercado';
+    $('#sheetDelete').hidden = true;
     editingId = '__list__'; showSheet(); setTimeout(() => $('#fTitle').focus(), 250);
   }
   function setPrio(p) { $$('.pchip').forEach(c => c.classList.toggle('on', +c.dataset.p === p)); }
@@ -431,6 +433,12 @@
   $$('.pchip').forEach(c => c.addEventListener('click', () => setPrio(+c.dataset.p)));
   $$('.cchip').forEach(c => c.addEventListener('click', () => { $$('.cchip').forEach(x => x.classList.remove('on')); c.classList.add('on'); }));
   $('#sheetCancel').addEventListener('click', hideSheet);
+  $('#sheetDelete').addEventListener('click', () => {
+    if (!editingId || editingId === '__list__') return;
+    const t = state.tasks.find(x => x.id === editingId);
+    if (t && !confirm(`¿Eliminar "${t.title}"?`)) return;
+    const id = editingId; hideSheet(); delTask(id);
+  });
   overlay.addEventListener('click', (e) => { if (e.target === overlay) hideSheet(); });
 
   // ---------- Nav / search ----------
