@@ -1,32 +1,50 @@
-/* Pendientes — PWA de tareas con vencimientos, mes y listas de compras. */
+/* Pendientes — tareas con prioridad, vista Hoy, subtareas, etiquetas, búsqueda.
+   Corre como web (PWA) y dentro del APK (Capacitor): en ese caso usa
+   notificaciones nativas del sistema (disparan con la app cerrada) y
+   sincroniza datos para el widget de pantalla de inicio. */
 (() => {
   'use strict';
 
-  const STORE_KEY = 'pendientes.v1';
-  const $ = (sel, ctx = document) => ctx.querySelector(sel);
-  const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+  const STORE_KEY = 'pendientes.v2';
+  const $ = (s, c = document) => c.querySelector(s);
+  const $$ = (s, c = document) => [...c.querySelectorAll(s)];
 
   const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
     'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const PRIO_LABEL = { 0: '', 1: 'Baja', 2: 'Media', 3: 'Alta' };
 
   // ---------- State ----------
   let state = load();
-  let view = 'semana';
-  let calMonth = new Date();
-  calMonth.setDate(1);
-  let selectedDay = null; // 'YYYY-MM-DD'
+  let view = 'hoy';
+  let calMonth = new Date(); calMonth.setDate(1);
+  let selectedDay = null;
   let editingId = null;
+  let draftSubs = [];        // subtareas mientras se edita
+  let expanded = {};         // id -> bool (subtareas desplegadas)
+  let query = '';
 
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) return migrate(JSON.parse(raw));
+      const old = localStorage.getItem('pendientes.v1');
+      if (old) return migrate(JSON.parse(old));
     } catch (e) { /* ignore */ }
     return { tasks: [], lists: [], notified: {} };
   }
+  function migrate(s) {
+    s.tasks = (s.tasks || []).map(t => ({
+      priority: 0, tags: [], subtasks: [], ...t,
+    }));
+    s.lists = s.lists || [];
+    s.notified = s.notified || {};
+    return s;
+  }
   function save() {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    scheduleNative();
+    syncWidget();
   }
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -41,33 +59,49 @@
     const [hh, mm] = (t.time || '23:59').split(':').map(Number);
     return new Date(y, m - 1, d, hh, mm);
   }
-
   function weekRange(base = new Date()) {
-    // Semana lunes → domingo
     const d = startOfDay(base);
-    const dow = (d.getDay() + 6) % 7; // 0 = lunes
+    const dow = (d.getDay() + 6) % 7;
     const start = new Date(d); start.setDate(d.getDate() - dow);
     const end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999);
     return { start, end };
   }
-
   function humanDue(t) {
     const dt = taskDate(t);
     if (!dt) return null;
     const now = new Date();
-    const today = startOfDay(now);
-    const day = startOfDay(dt);
-    const diffDays = Math.round((day - today) / 86400000);
-    const hasTime = !!t.time;
-    const hora = hasTime ? ` ${t.time}` : '';
-    let label, cls;
-    if (dt < now && !t.done) { label = 'Vencida' + (hasTime ? ` · ${t.time}` : ''); cls = 'due'; }
-    else if (diffDays < 0) { label = 'Venció'; cls = 'due'; }
-    else if (diffDays === 0) { label = 'Vence hoy' + hora; cls = 'today'; }
-    else if (diffDays === 1) { label = 'Mañana' + hora; cls = 'today'; }
-    else if (diffDays <= 6) { label = DIAS[dt.getDay()].slice(0, 3) + hora; cls = 'soon'; }
-    else { label = `${dt.getDate()} ${MESES[dt.getMonth()].slice(0, 3)}` + hora; cls = 'soon'; }
+    const today = startOfDay(now), day = startOfDay(dt);
+    const diff = Math.round((day - today) / 86400000);
+    const hora = t.time ? ` ${t.time}` : '';
+    let label, cls = '';
+    if (dt < now && !t.done) { label = 'Vencida' + (t.time ? ` ${t.time}` : ''); cls = 'due'; }
+    else if (diff === 0) { label = 'Hoy' + hora; cls = 'today'; }
+    else if (diff === 1) { label = 'Mañana' + hora; }
+    else if (diff > 1 && diff <= 6) { label = DIAS[dt.getDay()].slice(0, 3) + hora; }
+    else { label = `${dt.getDate()} ${MESES[dt.getMonth()].slice(0, 3)}` + hora; }
     return { label, cls };
+  }
+
+  // ---------- Natural language quick-add ----------
+  // Extrae #etiquetas, !prioridad y hoy/mañana + hora del texto.
+  function parseQuick(text) {
+    let title = text;
+    const tags = [];
+    let priority = null, date = null, time = null;
+    title = title.replace(/#([\wáéíóúñ]+)/gi, (_, t) => { tags.push(t.toLowerCase()); return ''; });
+    title = title.replace(/!(alta|media|baja|[1-3])/gi, (_, p) => {
+      const map = { alta: 3, media: 2, baja: 1, '1': 1, '2': 2, '3': 3 };
+      priority = map[p.toLowerCase()]; return '';
+    });
+    const t = new Date();
+    if (/\bhoy\b/i.test(title)) { date = ymd(t); title = title.replace(/\bhoy\b/i, ''); }
+    else if (/\bmañana\b/i.test(title)) { const d = new Date(t); d.setDate(d.getDate() + 1); date = ymd(d); title = title.replace(/\bmañana\b/i, ''); }
+    else if (/\bpasado\b/i.test(title)) { const d = new Date(t); d.setDate(d.getDate() + 2); date = ymd(d); title = title.replace(/\bpasado( mañana)?\b/i, ''); }
+    const hm = title.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+    if (hm) { time = `${pad(+hm[1])}:${hm[2]}`; title = title.replace(hm[0], ''); }
+    const pm = title.match(/\b(\d{1,2})\s?(am|pm)\b/i);
+    if (pm && !time) { let h = +pm[1] % 12; if (/pm/i.test(pm[2])) h += 12; time = `${pad(h)}:00`; title = title.replace(pm[0], ''); }
+    return { title: title.replace(/\s{2,}/g, ' ').trim(), tags, priority, date, time };
   }
 
   // ---------- Rendering ----------
@@ -75,560 +109,514 @@
 
   function render() {
     updateTop();
-    if (view === 'semana') renderSemana();
+    if (query) return renderSearch();
+    if (view === 'hoy') renderHoy();
+    else if (view === 'semana') renderSemana();
     else if (view === 'mes') renderMes();
     else renderCompras();
-    checkReminders();
+    checkWebReminders();
   }
 
   function updateTop() {
     const now = new Date();
     $('#topDay').textContent = `${DIAS[now.getDay()]} · ${now.getDate()} ${MESES[now.getMonth()].slice(0, 3)}`;
-    const titles = { semana: 'Esta semana', mes: 'Este mes', compras: 'Compras' };
-    $('#topTitle').textContent = titles[view];
-    $$('.tab').forEach(b => b.classList.toggle('on', b.dataset.view === view));
-    $$('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.view === view));
-    $('#progressWrap').classList.toggle('hide', view === 'compras');
-    $('#fab').style.display = view === 'mes' ? 'none' : 'flex';
+    const titles = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', compras: 'Compras' };
+    $('#topTitle').textContent = query ? 'Buscar' : titles[view];
+    $$('.seg-btn').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || !!query);
+    $('#fab').style.display = (view === 'mes' && !query) ? 'none' : 'flex';
   }
 
-  function taskCardHTML(t) {
+  const byPrioDate = (a, b) => (b.priority || 0) - (a.priority || 0) || ((taskDate(a) || Infinity) - (taskDate(b) || Infinity));
+
+  function rowHTML(t) {
     const due = humanDue(t);
-    const chips = [];
-    if (due) chips.push(`<span class="chip ${due.cls}"><span class="dot"></span>${due.label}</span>`);
-    if (t.done) chips.push('<span class="chip ok">Hecho</span>');
-    if (t.cat && t.cat !== 'General') chips.push(`<span class="chip cat">${esc(t.cat)}</span>`);
-    return `<div class="task ${t.done ? 'done' : ''}" data-id="${t.id}">
-        <button class="check ${t.done ? 'done' : ''}" data-act="toggle" aria-label="Marcar"></button>
-        <div class="body" data-act="edit">
-          <div class="t">${esc(t.title)}</div>
-          ${chips.length ? `<div class="meta">${chips.join('')}</div>` : ''}
+    const flag = `<span class="flag p${t.priority || 0}"></span>`;
+    const subs = t.subtasks || [];
+    const subDone = subs.filter(s => s.done).length;
+    const meta = [];
+    if (subs.length) meta.push(`<button class="subcount" data-act="expand"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 11l3 3L20 6"/></svg>${subDone}/${subs.length}</button>`);
+    if (t.cat && t.cat !== 'General') meta.push(`<span class="chip">${esc(t.cat)}</span>`);
+    (t.tags || []).forEach(tg => meta.push(`<span class="tag" data-tag="${esc(tg)}">#${esc(tg)}</span>`));
+    const subsBlock = (expanded[t.id] && subs.length) ? `<div class="subs">${subs.map(s =>
+      `<div class="subrow ${s.done ? 'done' : ''}"><button class="sck ${s.done ? 'done' : ''}" data-act="subtoggle" data-sid="${s.id}" aria-label="Marcar paso"></button><span>${esc(s.text)}</span></div>`
+    ).join('')}</div>` : '';
+    return `<div class="row ${t.done ? 'done' : ''}" data-id="${t.id}">
+        <button class="ck ${t.done ? 'done' : ''} p${t.priority || 0}" data-act="toggle" aria-label="Marcar"></button>
+        <div class="main" data-act="edit">
+          <div class="line1">${t.priority ? flag : ''}<span class="tx">${esc(t.title)}</span>${due ? `<span class="when ${due.cls}">${due.label}</span>` : ''}</div>
+          ${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}
+          ${subsBlock}
         </div>
-        <button class="del" data-act="del" aria-label="Eliminar">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-        </button>
+        <button class="del" data-act="del" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
       </div>`;
+  }
+
+  function sectionHTML(label, arr) {
+    if (!arr.length) return '';
+    return `<div class="sec">${label}<span class="count">${arr.length}</span></div>` + arr.map(rowHTML).join('');
+  }
+
+  function renderHoy() {
+    const now = new Date(), today = startOfDay(now);
+    const todayStr = ymd(now);
+    const pend = state.tasks.filter(t => !t.done);
+    const overdue = pend.filter(t => { const d = taskDate(t); return d && d < now && ymd(d) !== todayStr; }).sort(byPrioDate);
+    const hoy = pend.filter(t => t.date === todayStr).sort(byPrioDate);
+    const done = state.tasks.filter(t => t.done && t.date === todayStr);
+    updateProgress(done.length, hoy.length + done.length);
+    let html = sectionHTML('Vencidas', overdue) + sectionHTML('Hoy', hoy) + sectionHTML('Completadas hoy', done);
+    content.innerHTML = html || `<div class="empty">
+      <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <b>Día despejado</b><p>No tenés nada para hoy ni vencido. Disfrutá.</p></div>`;
   }
 
   function renderSemana() {
     const { start, end } = weekRange();
-    const now = new Date();
-    const tasks = state.tasks.slice();
-
-    // Buckets: Vencidas, Hoy, Mañana, Resto de la semana, Sin fecha, Hechas
-    const buckets = {
-      vencidas: [], hoy: [], manana: [], semana: [], sinfecha: [], hechas: []
-    };
-    const today = startOfDay(now);
+    const now = new Date(), today = startOfDay(now);
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-
-    tasks.forEach(t => {
-      if (t.done) { buckets.hechas.push(t); return; }
+    const b = { venc: [], hoy: [], man: [], sem: [], sin: [], hechas: [] };
+    state.tasks.forEach(t => {
+      if (t.done) { b.hechas.push(t); return; }
       const dt = taskDate(t);
-      if (!dt) { buckets.sinfecha.push(t); return; }
-      if (dt < now) { buckets.vencidas.push(t); return; }
+      if (!dt) { b.sin.push(t); return; }
+      if (dt < now) { b.venc.push(t); return; }
       const day = startOfDay(dt);
-      if (+day === +today) buckets.hoy.push(t);
-      else if (+day === +tomorrow) buckets.manana.push(t);
-      else if (dt >= start && dt <= end) buckets.semana.push(t);
-      else buckets.semana.push(t); // futuras también, ordenadas por fecha
+      if (+day === +today) b.hoy.push(t);
+      else if (+day === +tomorrow) b.man.push(t);
+      else b.sem.push(t);
     });
-
-    const byDate = (a, b) => (taskDate(a) || 0) - (taskDate(b) || 0);
-    Object.values(buckets).forEach(arr => arr.sort(byDate));
-
-    // Progreso: tareas de la semana (con y sin fecha) marcadas hoy
-    const total = tasks.filter(t => !t.done).length + buckets.hechas.length;
-    const doneCount = buckets.hechas.length;
-    updateProgress(doneCount, total);
-
-    const sections = [
-      ['Vencidas', buckets.vencidas],
-      ['Hoy', buckets.hoy],
-      ['Mañana', buckets.manana],
-      ['Próximas', buckets.semana],
-      ['Sin fecha', buckets.sinfecha],
-      ['Completadas', buckets.hechas],
-    ];
-
-    let html = '';
-    let any = false;
-    for (const [label, arr] of sections) {
-      if (!arr.length) continue;
-      any = true;
-      html += `<div class="group-label">${label}<span class="count">${arr.length}</span></div>`;
-      html += arr.map(taskCardHTML).join('');
-    }
-    content.innerHTML = any ? html : emptyHTML('semana');
+    Object.values(b).forEach(a => a.sort(byPrioDate));
+    updateProgress(b.hechas.length, state.tasks.length);
+    const html = sectionHTML('Vencidas', b.venc) + sectionHTML('Hoy', b.hoy) + sectionHTML('Mañana', b.man)
+      + sectionHTML('Próximas', b.sem) + sectionHTML('Sin fecha', b.sin) + sectionHTML('Completadas', b.hechas);
+    content.innerHTML = html || emptyBox('Todo en orden', 'No tenés tareas pendientes. Tocá el + para agregar una.');
   }
 
   function renderMes() {
-    updateProgress(0, 0);
     const y = calMonth.getFullYear(), m = calMonth.getMonth();
-    const first = new Date(y, m, 1);
-    const startPad = (first.getDay() + 6) % 7; // lunes=0
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const startPad = (new Date(y, m, 1).getDay() + 6) % 7;
+    const days = new Date(y, m + 1, 0).getDate();
     const todayStr = ymd(new Date());
-
-    // Mapear tareas por día
     const map = {};
-    state.tasks.forEach(t => {
-      if (!t.date) return;
-      (map[t.date] = map[t.date] || []).push(t);
-    });
-
+    state.tasks.forEach(t => { if (t.date) (map[t.date] = map[t.date] || []).push(t); });
     let cells = '';
     for (let i = 0; i < startPad; i++) cells += `<div class="cell out"></div>`;
-    for (let d = 1; d <= daysInMonth; d++) {
+    for (let d = 1; d <= days; d++) {
       const ds = `${y}-${pad(m + 1)}-${pad(d)}`;
-      const dayTasks = map[ds] || [];
-      const pending = dayTasks.filter(t => !t.done).length;
-      const done = dayTasks.length - pending;
-      let pips = '';
-      if (dayTasks.length) {
-        pips = '<div class="pips">';
-        if (pending) pips += '<i></i>';
-        if (done) pips += '<i class="done"></i>';
-        pips += '</div>';
-      }
-      const cls = ['cell', 'cur'];
-      if (ds === todayStr) cls.push('today');
-      if (ds === selectedDay) cls.push('sel');
+      const arr = map[ds] || [];
+      const pend = arr.filter(t => !t.done).length, dn = arr.length - pend;
+      let pips = arr.length ? '<div class="pips">' + (pend ? '<i></i>' : '') + (dn ? '<i class="done"></i>' : '') + '</div>' : '';
+      const cls = ['cell', 'cur']; if (ds === todayStr) cls.push('today'); if (ds === selectedDay) cls.push('sel');
       cells += `<div class="${cls.join(' ')}" data-day="${ds}">${d}${pips}</div>`;
     }
-
-    const html = `<div class="cal">
-        <div class="cal-head">
-          <h3>${MESES[m]} ${y}</h3>
-          <div class="cal-nav">
-            <button data-cal="prev" aria-label="Mes anterior">‹</button>
-            <button data-cal="today" aria-label="Hoy">•</button>
-            <button data-cal="next" aria-label="Mes siguiente">›</button>
-          </div>
-        </div>
+    content.innerHTML = `<div class="cal">
+        <div class="cal-head"><h3>${MESES[m]} ${y}</h3>
+          <div class="cal-nav"><button data-cal="prev" aria-label="Anterior">‹</button><button data-cal="today" aria-label="Hoy">•</button><button data-cal="next" aria-label="Siguiente">›</button></div></div>
         <div class="m-head"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
-        <div class="m-grid">${cells}</div>
-      </div>
-      <div id="dayDetail"></div>`;
-    content.innerHTML = html;
+        <div class="m-grid">${cells}</div></div><div id="dayDetail"></div>`;
     renderDayDetail();
   }
-
   function renderDayDetail() {
-    const box = $('#dayDetail');
-    if (!box) return;
-    if (!selectedDay) {
-      box.innerHTML = `<div class="empty" style="padding:32px 20px">
-        <p>Tocá un día para ver o agregar sus tareas.</p></div>`;
-      return;
-    }
+    const box = $('#dayDetail'); if (!box) return;
+    if (!selectedDay) { box.innerHTML = `<div class="empty" style="padding:30px 20px"><p>Tocá un día para ver o agregar sus tareas.</p></div>`; return; }
     const [y, mo, d] = selectedDay.split('-').map(Number);
     const dt = new Date(y, mo - 1, d);
-    const tasks = state.tasks.filter(t => t.date === selectedDay).sort((a, b) => (taskDate(a) || 0) - (taskDate(b) || 0));
-    const header = `<div class="group-label">${DIAS[dt.getDay()]} ${d} de ${MESES[mo - 1]}
-      <span class="count">${tasks.length} ${tasks.length === 1 ? 'tarea' : 'tareas'}</span></div>`;
-    const body = tasks.length
-      ? tasks.map(taskCardHTML).join('')
-      : `<div class="empty" style="padding:24px 20px"><p>Nada agendado.</p></div>`;
-    const addBtn = `<button class="btn primary" id="addForDay" style="margin-top:10px">+ Agregar tarea para este día</button>`;
-    box.innerHTML = header + body + addBtn;
+    const tasks = state.tasks.filter(t => t.date === selectedDay).sort(byPrioDate);
+    box.innerHTML = `<div class="sec">${DIAS[dt.getDay()]} ${d} de ${MESES[mo - 1]}<span class="count">${tasks.length} ${tasks.length === 1 ? 'tarea' : 'tareas'}</span></div>`
+      + (tasks.length ? tasks.map(rowHTML).join('') : `<div class="empty" style="padding:22px"><p>Nada agendado.</p></div>`)
+      + `<button class="btn primary" id="addForDay" style="margin-top:12px">+ Agregar tarea para este día</button>`;
   }
 
   function renderCompras() {
-    updateProgress(0, 0);
-    if (!state.lists.length) {
-      content.innerHTML = emptyHTML('compras');
-      return;
-    }
-    let html = '';
-    state.lists.forEach(list => {
+    if (!state.lists.length) { content.innerHTML = emptyBox('Sin listas', 'Creá tu primera lista de compras con el botón +.'); return; }
+    content.innerHTML = state.lists.map(list => {
       const done = list.items.filter(i => i.done).length;
-      const items = list.items.map(it => `
-        <div class="shop-item ${it.done ? 'done' : ''}" data-list="${list.id}" data-item="${it.id}">
-          <button class="check ${it.done ? 'done' : ''}" data-act="shop-toggle" aria-label="Marcar"></button>
-          <span>${esc(it.text)}</span>
-          <button class="rm" data-act="shop-del" aria-label="Quitar">&times;</button>
-        </div>`).join('');
-      html += `<div class="shop-list" data-list="${list.id}">
-          <div class="shop-head">
-            <h3>${esc(list.name)}</h3>
-            <span class="badge">${done}/${list.items.length}</span>
-            <button class="del-list" data-act="list-del" aria-label="Eliminar lista">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-            </button>
-          </div>
+      const items = list.items.map(it => `<div class="shop-item ${it.done ? 'done' : ''}" data-list="${list.id}" data-item="${it.id}">
+          <button class="sck ${it.done ? 'done' : ''}" data-act="shop-toggle" aria-label="Marcar"></button>
+          <span>${esc(it.text)}</span><button class="rm" data-act="shop-del" aria-label="Quitar">&times;</button></div>`).join('');
+      return `<div class="shop-list" data-list="${list.id}">
+          <div class="shop-head"><h3>${esc(list.name)}</h3><span class="badge">${done}/${list.items.length}</span>
+            <button class="del-list" data-act="list-del" aria-label="Eliminar lista"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button></div>
           ${items}
-          <form class="shop-add" data-list="${list.id}">
-            <input type="text" placeholder="Agregar ítem…" autocomplete="off" aria-label="Nuevo ítem">
-            <button type="submit" aria-label="Agregar ítem">+</button>
-          </form>
+          <form class="shop-add" data-list="${list.id}"><input type="text" placeholder="Agregar ítem…" autocomplete="off" aria-label="Nuevo ítem"><button type="submit" aria-label="Agregar">+</button></form>
         </div>`;
-    });
-    content.innerHTML = html;
+    }).join('');
   }
 
-  function emptyHTML(v) {
-    const map = {
-      semana: ['Todo en orden', 'No tenés tareas pendientes. Tocá el + para agregar una.'],
-      compras: ['Sin listas', 'Creá tu primera lista de compras con el botón +.'],
-    };
-    const [title, desc] = map[v];
+  function renderSearch() {
+    const q = query.toLowerCase().replace(/^#/, '');
+    const isTag = query.startsWith('#');
+    const res = state.tasks.filter(t => {
+      if (isTag) return (t.tags || []).some(tg => tg.includes(q));
+      return t.title.toLowerCase().includes(q) || (t.tags || []).some(tg => tg.includes(q)) || (t.cat || '').toLowerCase().includes(q);
+    }).sort(byPrioDate);
+    content.innerHTML = res.length
+      ? `<div class="sec">Resultados<span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
+      : `<div class="empty" style="padding:44px 20px"><b>Sin resultados</b><p>No hay tareas que coincidan con "${esc(query)}".</p></div>`;
+  }
+
+  function emptyBox(title, desc) {
     return `<div class="empty">
-      <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
       <b>${title}</b><p>${desc}</p></div>`;
   }
-
   function updateProgress(done, total) {
     const pct = total ? Math.round((done / total) * 100) : 0;
     $('#progressFill').style.width = pct + '%';
     $('#progressPct').textContent = `${done}/${total}`;
   }
-
   const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  // ---------- Events: content delegation ----------
+  // ---------- Content interactions ----------
   content.addEventListener('click', (e) => {
-    const actEl = e.target.closest('[data-act]');
-    // Calendar nav
     const calBtn = e.target.closest('[data-cal]');
     if (calBtn) {
-      const dir = calBtn.dataset.cal;
-      if (dir === 'prev') calMonth.setMonth(calMonth.getMonth() - 1);
-      else if (dir === 'next') calMonth.setMonth(calMonth.getMonth() + 1);
+      const d = calBtn.dataset.cal;
+      if (d === 'prev') calMonth.setMonth(calMonth.getMonth() - 1);
+      else if (d === 'next') calMonth.setMonth(calMonth.getMonth() + 1);
       else { calMonth = new Date(); calMonth.setDate(1); selectedDay = ymd(new Date()); }
-      renderMes();
-      return;
+      renderMes(); return;
     }
     const cell = e.target.closest('.cell[data-day]');
-    if (cell) {
-      selectedDay = selectedDay === cell.dataset.day ? null : cell.dataset.day;
-      renderMes();
-      return;
-    }
+    if (cell) { selectedDay = selectedDay === cell.dataset.day ? null : cell.dataset.day; renderMes(); return; }
     if (e.target.id === 'addForDay') { openSheet(null, selectedDay); return; }
 
+    const tagEl = e.target.closest('.tag[data-tag]');
+    if (tagEl) { openSearch('#' + tagEl.dataset.tag); return; }
+
+    const actEl = e.target.closest('[data-act]');
     if (!actEl) return;
     const act = actEl.dataset.act;
-
-    if (act === 'toggle' || act === 'edit' || act === 'del') {
-      const card = actEl.closest('.task');
-      const id = card.dataset.id;
-      if (act === 'toggle') toggleTask(id);
-      else if (act === 'edit') openSheet(id);
-      else if (act === 'del') delTask(id);
-      return;
-    }
     if (act === 'shop-toggle' || act === 'shop-del') {
-      const row = actEl.closest('.shop-item');
-      shopItemAction(row.dataset.list, row.dataset.item, act === 'shop-toggle' ? 'toggle' : 'del');
-      return;
+      const row = actEl.closest('.shop-item'); shopItem(row.dataset.list, row.dataset.item, act === 'shop-toggle' ? 'toggle' : 'del'); return;
     }
-    if (act === 'list-del') {
-      const listId = actEl.closest('.shop-list').dataset.list;
-      delList(listId);
-      return;
-    }
+    if (act === 'list-del') { delList(actEl.closest('.shop-list').dataset.list); return; }
+
+    const card = actEl.closest('.row'); if (!card) return;
+    const id = card.dataset.id;
+    if (act === 'toggle') toggleTask(id);
+    else if (act === 'edit') openSheet(id);
+    else if (act === 'del') delTask(id);
+    else if (act === 'expand') { expanded[id] = !expanded[id]; render(); }
+    else if (act === 'subtoggle') toggleSub(id, actEl.dataset.sid);
   });
 
-  // Shopping add-item forms
   content.addEventListener('submit', (e) => {
-    const form = e.target.closest('.shop-add');
-    if (!form) return;
+    const form = e.target.closest('.shop-add'); if (!form) return;
     e.preventDefault();
-    const input = form.querySelector('input');
-    const text = input.value.trim();
-    if (!text) return;
+    const input = form.querySelector('input'); const text = input.value.trim(); if (!text) return;
     const list = state.lists.find(l => l.id === form.dataset.list);
     if (list) { list.items.push({ id: uid(), text, done: false }); save(); renderCompras(); }
   });
 
   // ---------- Task actions ----------
   function toggleTask(id) {
-    const t = state.tasks.find(x => x.id === id);
-    if (!t) return;
-    t.done = !t.done;
-    if (t.done) delete state.notified[id];
-    save();
-    render();
-    toast(t.done ? '✓ Tarea completada' : 'Reactivada');
+    const t = state.tasks.find(x => x.id === id); if (!t) return;
+    t.done = !t.done; if (t.done) delete state.notified[id];
+    save(); render(); toast(t.done ? '✓ Completada' : 'Reactivada');
   }
   function delTask(id) {
-    state.tasks = state.tasks.filter(x => x.id !== id);
-    delete state.notified[id];
-    save();
-    render();
-    toast('Tarea eliminada');
+    state.tasks = state.tasks.filter(x => x.id !== id); delete state.notified[id];
+    save(); render(); toast('Tarea eliminada');
   }
-
-  // ---------- Shopping actions ----------
-  function shopItemAction(listId, itemId, action) {
-    const list = state.lists.find(l => l.id === listId);
-    if (!list) return;
-    if (action === 'toggle') {
-      const it = list.items.find(i => i.id === itemId);
-      if (it) it.done = !it.done;
-    } else {
-      list.items = list.items.filter(i => i.id !== itemId);
-    }
-    save();
-    renderCompras();
+  function toggleSub(id, sid) {
+    const t = state.tasks.find(x => x.id === id); if (!t) return;
+    const s = (t.subtasks || []).find(x => x.id === sid); if (!s) return;
+    s.done = !s.done; save(); render();
+  }
+  function shopItem(listId, itemId, action) {
+    const list = state.lists.find(l => l.id === listId); if (!list) return;
+    if (action === 'toggle') { const it = list.items.find(i => i.id === itemId); if (it) it.done = !it.done; }
+    else list.items = list.items.filter(i => i.id !== itemId);
+    save(); renderCompras();
   }
   function delList(id) {
     const list = state.lists.find(l => l.id === id);
     if (list && !confirm(`¿Eliminar la lista "${list.name}"?`)) return;
-    state.lists = state.lists.filter(l => l.id !== id);
-    save();
-    renderCompras();
+    state.lists = state.lists.filter(l => l.id !== id); save(); renderCompras();
   }
 
-  // ---------- Sheet (create/edit) ----------
-  const overlay = $('#sheetOverlay');
-  const form = $('#taskForm');
+  // ---------- Sheet ----------
+  const overlay = $('#sheetOverlay'), form = $('#taskForm');
 
   function openSheet(id = null, presetDate = null) {
     editingId = id;
-    if (view === 'compras') { openListSheet(); return; }
-    // Task sheet
-    $('#taskFields').style.display = '';
-    $('#catField').style.display = '';
-    $('#remindField').style.display = '';
-    let t = id ? state.tasks.find(x => x.id === id) : null;
+    if (view === 'compras' && !id) { openListSheet(); return; }
+    $('.task-only').style.display = '';
+    const t = id ? state.tasks.find(x => x.id === id) : null;
     $('#sheetTitle').textContent = t ? 'Editar tarea' : 'Nueva tarea';
     $('#fTitle').value = t ? t.title : '';
     $('#fDate').value = t ? (t.date || '') : (presetDate || '');
     $('#fTime').value = t ? (t.time || '') : '';
+    $('#fTags').value = t ? (t.tags || []).map(x => '#' + x).join(' ') : '';
     $('#fRemind').value = t ? String(t.remind ?? 60) : '60';
+    setPrio(t ? (t.priority || 0) : 0);
     const cat = t ? (t.cat || 'General') : 'General';
     $$('.cchip').forEach(c => c.classList.toggle('on', c.dataset.cat === cat));
-    showSheet();
-    setTimeout(() => $('#fTitle').focus(), 250);
+    draftSubs = t ? (t.subtasks || []).map(s => ({ ...s })) : [];
+    renderDraftSubs();
+    $('#parseHint').textContent = '';
+    showSheet(); setTimeout(() => $('#fTitle').focus(), 250);
   }
-
   function openListSheet() {
-    $('#taskFields').style.display = 'none';
-    $('#catField').style.display = 'none';
-    $('#remindField').style.display = 'none';
+    $('.task-only').style.display = 'none';
     $('#sheetTitle').textContent = 'Nueva lista de compras';
-    $('#fTitle').value = '';
-    $('#fTitle').placeholder = 'Ej: Supermercado';
-    editingId = '__list__';
-    showSheet();
-    setTimeout(() => $('#fTitle').focus(), 250);
+    $('#fTitle').value = ''; $('#fTitle').placeholder = 'Ej: Supermercado';
+    editingId = '__list__'; showSheet(); setTimeout(() => $('#fTitle').focus(), 250);
   }
+  function setPrio(p) { $$('.pchip').forEach(c => c.classList.toggle('on', +c.dataset.p === p)); }
+  function getPrio() { const el = $('.pchip.on'); return el ? +el.dataset.p : 0; }
+  function renderDraftSubs() {
+    $('#subsEditor').innerHTML = draftSubs.map((s, i) =>
+      `<div class="se-row"><span>${esc(s.text)}</span><button type="button" data-i="${i}" aria-label="Quitar">&times;</button></div>`).join('');
+  }
+  $('#subsEditor').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-i]'); if (!b) return;
+    draftSubs.splice(+b.dataset.i, 1); renderDraftSubs();
+  });
+  function addDraftSub() {
+    const inp = $('#subInput'); const v = inp.value.trim(); if (!v) return;
+    draftSubs.push({ id: uid(), text: v, done: false }); inp.value = ''; renderDraftSubs(); inp.focus();
+  }
+  $('#subAddBtn').addEventListener('click', addDraftSub);
+  $('#subInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addDraftSub(); } });
 
   function showSheet() { overlay.hidden = false; }
-  function hideSheet() {
-    overlay.hidden = true;
-    $('#fTitle').placeholder = 'Ej: Pedir turno médico';
-    editingId = null;
-  }
+  function hideSheet() { overlay.hidden = true; $('#fTitle').placeholder = 'Ej: mañana 15:00 pedir turno #salud'; editingId = null; draftSubs = []; }
+
+  // Vista previa de escritura natural
+  $('#fTitle').addEventListener('input', () => {
+    if (editingId === '__list__') return;
+    const p = parseQuick($('#fTitle').value);
+    const bits = [];
+    if (p.date) bits.push('📅 ' + p.date);
+    if (p.time) bits.push('🕑 ' + p.time);
+    if (p.priority) bits.push('⚑ ' + PRIO_LABEL[p.priority]);
+    if (p.tags.length) bits.push(p.tags.map(t => '#' + t).join(' '));
+    $('#parseHint').textContent = bits.length ? 'Detecté: ' + bits.join(' · ') : '';
+  });
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const title = $('#fTitle').value.trim();
-    if (!title) return;
+    const raw = $('#fTitle').value.trim(); if (!raw) return;
 
     if (editingId === '__list__') {
-      state.lists.unshift({ id: uid(), name: title, items: [] });
-      save(); hideSheet(); renderCompras(); toast('Lista creada');
-      return;
+      state.lists.unshift({ id: uid(), name: raw, items: [] });
+      save(); hideSheet(); renderCompras(); toast('Lista creada'); return;
     }
 
-    const cat = ($('.cchip.on') || {}).dataset?.cat || 'General';
+    const p = parseQuick(raw);
+    const title = p.title || raw;
+    // Etiquetas: del campo + las parseadas del texto
+    const fieldTags = $('#fTags').value.split(/\s+/).map(s => s.replace(/^#/, '').toLowerCase()).filter(Boolean);
+    const tags = [...new Set([...fieldTags, ...p.tags])];
     const data = {
       title,
-      date: $('#fDate').value || null,
-      time: $('#fTime').value || null,
-      cat,
+      date: $('#fDate').value || p.date || null,
+      time: $('#fTime').value || p.time || null,
+      priority: (p.priority != null ? p.priority : getPrio()),
+      cat: ($('.cchip.on') || {}).dataset?.cat || 'General',
+      tags,
+      subtasks: draftSubs,
       remind: Number($('#fRemind').value),
     };
-
-    if (editingId) {
-      const t = state.tasks.find(x => x.id === editingId);
-      Object.assign(t, data);
-      delete state.notified[t.id]; // reprogramar aviso
-    } else {
-      state.tasks.push({ id: uid(), done: false, ...data });
-    }
+    if (editingId) { const t = state.tasks.find(x => x.id === editingId); Object.assign(t, data); delete state.notified[t.id]; }
+    else state.tasks.push({ id: uid(), done: false, ...data });
     save(); hideSheet();
-    // Si estamos en mes, mantener día seleccionado
     if (view === 'mes' && data.date) selectedDay = data.date;
-    render();
-    toast(editingId ? 'Tarea actualizada' : 'Tarea agregada');
-    maybeAskNotify();
+    render(); toast(editingId ? 'Tarea actualizada' : 'Tarea agregada'); maybeAskNotify();
   });
 
-  $$('.cchip').forEach(c => c.addEventListener('click', () => {
-    $$('.cchip').forEach(x => x.classList.remove('on'));
-    c.classList.add('on');
-  }));
-
+  $$('.pchip').forEach(c => c.addEventListener('click', () => setPrio(+c.dataset.p)));
+  $$('.cchip').forEach(c => c.addEventListener('click', () => { $$('.cchip').forEach(x => x.classList.remove('on')); c.classList.add('on'); }));
   $('#sheetCancel').addEventListener('click', hideSheet);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) hideSheet(); });
 
-  // ---------- Tabs / nav ----------
-  $$('.tab, .nav-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      view = btn.dataset.view;
-      if (view === 'mes' && !selectedDay) selectedDay = ymd(new Date());
-      render();
-    });
-  });
-
+  // ---------- Nav / search ----------
+  $$('.seg-btn').forEach(btn => btn.addEventListener('click', () => {
+    view = btn.dataset.view; closeSearch(false);
+    if (view === 'mes' && !selectedDay) selectedDay = ymd(new Date());
+    render();
+  }));
   $('#fab').addEventListener('click', () => openSheet());
+
+  const searchbar = $('#searchbar'), searchInput = $('#searchInput');
+  function openSearch(preset = '') {
+    searchbar.hidden = false; $('#searchBtn').classList.add('active');
+    searchInput.value = preset; query = preset; render();
+    if (!preset) setTimeout(() => searchInput.focus(), 50);
+  }
+  function closeSearch(rerender = true) {
+    searchbar.hidden = true; $('#searchBtn').classList.remove('active');
+    searchInput.value = ''; query = ''; if (rerender) render();
+  }
+  $('#searchBtn').addEventListener('click', () => searchbar.hidden ? openSearch() : closeSearch());
+  $('#searchClear').addEventListener('click', () => closeSearch());
+  searchInput.addEventListener('input', () => { query = searchInput.value.trim(); render(); });
 
   // ---------- Toast ----------
   let toastTimer;
-  function toast(msg) {
-    const el = $('#toast');
-    el.textContent = msg;
-    el.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 2200);
+  function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, 2200); }
+
+  // ============================================================
+  //  Notificaciones + integración nativa (Capacitor / APK)
+  // ============================================================
+  const Cap = window.Capacitor;
+  const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
+  const LocalNotifications = () => Cap?.Plugins?.LocalNotifications;
+  const Preferences = () => Cap?.Plugins?.Preferences;
+
+  function reminderTime(t) {
+    const dt = taskDate(t); if (!dt) return null;
+    return dt.getTime() - (t.remind ?? 60) * 60000;
   }
 
-  // ---------- Notifications ----------
-  const notifBtn = $('#notifBtn');
-
-  function updateNotifBtn() {
-    const granted = 'Notification' in window && Notification.permission === 'granted';
-    notifBtn.classList.toggle('active', granted);
-  }
-
-  async function requestNotify() {
-    if (!('Notification' in window)) { toast('Tu navegador no soporta avisos'); return false; }
-    if (Notification.permission === 'granted') { updateNotifBtn(); return true; }
-    if (Notification.permission === 'denied') { toast('Los avisos están bloqueados en el navegador'); return false; }
-    const res = await Notification.requestPermission();
-    updateNotifBtn();
-    if (res === 'granted') { toast('🔔 Avisos activados'); checkReminders(); return true; }
-    return false;
-  }
-
-  notifBtn.addEventListener('click', requestNotify);
-
-  function maybeAskNotify() {
-    if ('Notification' in window && Notification.permission === 'default') {
-      if (!sessionStorage.getItem('askedNotify')) {
-        sessionStorage.setItem('askedNotify', '1');
-        setTimeout(requestNotify, 600);
-      }
-    }
-  }
-
-  function notify(title, body, tag) {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  // --- Nativo: programa TODAS las notificaciones futuras en el sistema.
+  // Disparan aunque la app esté cerrada (AlarmManager). ---
+  async function scheduleNative() {
+    if (!isNative || !LocalNotifications()) return;
+    const LN = LocalNotifications();
     try {
-      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-        navigator.serviceWorker.ready.then(reg => {
-          reg.showNotification(title, { body, tag, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' });
+      const perm = await LN.checkPermissions();
+      if (perm.display !== 'granted') { const r = await LN.requestPermissions(); if (r.display !== 'granted') return; }
+      // limpiar programadas anteriores
+      const pending = await LN.getPending();
+      if (pending.notifications?.length) await LN.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) });
+      const now = Date.now();
+      const toSchedule = [];
+      state.tasks.filter(t => !t.done && t.date).forEach(t => {
+        const at = reminderTime(t);
+        if (at == null || at < now + 5000) return;
+        toSchedule.push({
+          id: hashId(t.id),
+          title: '⏰ ' + t.title,
+          body: (t.time ? `Vence hoy ${t.time}` : 'Vence hoy') + (t.cat && t.cat !== 'General' ? ` · ${t.cat}` : ''),
+          schedule: { at: new Date(at), allowWhileIdle: true },
+          smallIcon: 'ic_stat_icon',
         });
-      } else {
-        new Notification(title, { body, tag });
+      });
+      if (toSchedule.length) await LN.schedule({ notifications: toSchedule });
+    } catch (e) { /* silencioso */ }
+  }
+  function hashId(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h) % 2000000000 || 1; }
+
+  // --- Widget: espeja los pendientes de hoy en Preferences (SharedPreferences)
+  //     para que el widget nativo los lea. ---
+  async function syncWidget() {
+    if (!isNative || !Preferences()) return;
+    const todayStr = ymd(new Date());
+    const now = new Date();
+    const items = state.tasks
+      .filter(t => !t.done && (t.date === todayStr || (taskDate(t) && taskDate(t) < now)))
+      .sort(byPrioDate)
+      .slice(0, 10)
+      .map(t => ({ id: t.id, title: t.title, time: t.time || '', priority: t.priority || 0 }));
+    try {
+      await Preferences().set({ key: 'widget_tasks', value: JSON.stringify(items) });
+      await Preferences().set({ key: 'widget_updated', value: String(Date.now()) });
+      if (Cap?.Plugins?.WidgetBridge?.refresh) Cap.Plugins.WidgetBridge.refresh();
+    } catch (e) { /* silencioso */ }
+  }
+  // Al volver a la app, aplicar cambios hechos desde el widget (marcar hecho).
+  async function pullWidgetChanges() {
+    if (!isNative || !Preferences()) return;
+    try {
+      const { value } = await Preferences().get({ key: 'widget_toggle' });
+      if (value) {
+        const t = state.tasks.find(x => x.id === value);
+        if (t) { t.done = true; }
+        await Preferences().remove({ key: 'widget_toggle' });
+        save(); render();
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { /* silencioso */ }
   }
 
-  // Revisa vencimientos y dispara avisos locales (mientras la app está abierta / en background).
-  function checkReminders() {
+  // --- Web fallback: notificaciones mientras la pestaña vive ---
+  function checkWebReminders() {
+    if (isNative) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const now = Date.now();
     state.tasks.forEach(t => {
-      if (t.done) return;
-      const dt = taskDate(t);
-      if (!dt) return;
-      const remindMs = (t.remind ?? 60) * 60000;
-      const fireAt = dt.getTime() - remindMs;
-      const already = state.notified[t.id];
-      // Disparar si estamos dentro de la ventana [fireAt, vencimiento+2min] y no se avisó
-      if (now >= fireAt && now <= dt.getTime() + 120000 && already !== 'pre') {
-        const when = t.time ? `hoy ${t.time}` : 'hoy';
+      if (t.done || !t.date) return;
+      const dt = taskDate(t); const at = reminderTime(t);
+      if (now >= at && now <= dt.getTime() + 120000 && state.notified[t.id] !== 'pre') {
         const mins = Math.round((dt.getTime() - now) / 60000);
         const detail = mins > 1 ? `Vence en ${mins} min` : (mins >= 0 ? 'Vence ahora' : 'Está por vencer');
-        notify(`⏰ ${t.title}`, `${detail} · ${t.cat || 'Tarea'}`, 'task-' + t.id);
-        state.notified[t.id] = 'pre';
-        save();
+        webNotify('⏰ ' + t.title, `${detail} · ${t.cat || 'Tarea'}`, 'task-' + t.id);
+        state.notified[t.id] = 'pre'; localStorage.setItem(STORE_KEY, JSON.stringify(state));
       }
     });
   }
-
-  // Resumen al abrir (una vez al día)
-  function dailySummary() {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const key = 'summary-' + ymd(new Date());
-    if (state.notified[key]) return;
-    const now = new Date();
-    const today = ymd(now);
-    const dueToday = state.tasks.filter(t => !t.done && t.date === today).length;
-    const overdue = state.tasks.filter(t => { const d = taskDate(t); return !t.done && d && d < now; }).length;
-    if (dueToday + overdue > 0) {
-      const parts = [];
-      if (dueToday) parts.push(`${dueToday} para hoy`);
-      if (overdue) parts.push(`${overdue} vencida${overdue > 1 ? 's' : ''}`);
-      notify('Pendientes de hoy', parts.join(' · '), 'daily');
-      state.notified[key] = 1;
-      save();
-    }
+  function webNotify(title, body, tag) {
+    try {
+      if (navigator.serviceWorker?.ready) navigator.serviceWorker.ready.then(r => r.showNotification(title, { body, tag, icon: 'icons/icon-192.png' }));
+      else new Notification(title, { body, tag });
+    } catch (e) { /* ignore */ }
   }
 
-  // Poll cada 60s mientras la pestaña esté viva
-  setInterval(checkReminders, 60000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); render(); } });
+  const notifBtn = $('#notifBtn');
+  function updateNotifBtn() {
+    if (isNative) { notifBtn.classList.add('active'); return; }
+    notifBtn.classList.toggle('active', 'Notification' in window && Notification.permission === 'granted');
+  }
+  async function requestNotify() {
+    if (isNative) { await scheduleNative(); toast('🔔 Avisos activados'); updateNotifBtn(); return true; }
+    if (!('Notification' in window)) { toast('Tu navegador no soporta avisos'); return false; }
+    if (Notification.permission === 'denied') { toast('Los avisos están bloqueados'); return false; }
+    const res = await Notification.requestPermission(); updateNotifBtn();
+    if (res === 'granted') { toast('🔔 Avisos activados'); checkWebReminders(); return true; }
+    return false;
+  }
+  notifBtn.addEventListener('click', requestNotify);
+  function maybeAskNotify() {
+    if (isNative) { scheduleNative(); return; }
+    if ('Notification' in window && Notification.permission === 'default' && !sessionStorage.getItem('askedNotify')) {
+      sessionStorage.setItem('askedNotify', '1'); setTimeout(requestNotify, 600);
+    }
+  }
+  setInterval(checkWebReminders, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { pullWidgetChanges(); checkWebReminders(); render(); } });
+  if (isNative && Cap.Plugins?.App) Cap.Plugins.App.addListener?.('resume', () => { pullWidgetChanges(); render(); });
 
-  // ---------- Install (PWA) ----------
+  // ---------- Install (PWA fallback) ----------
   let deferredPrompt = null;
-  const banner = $('#installBanner');
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    if (!localStorage.getItem('installDismissed')) banner.hidden = false;
-  });
-  $('#installBtn').addEventListener('click', async () => {
-    if (!deferredPrompt) { banner.hidden = true; return; }
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt = null;
-    banner.hidden = true;
-  });
-  $('#installClose').addEventListener('click', () => {
-    banner.hidden = true;
-    localStorage.setItem('installDismissed', '1');
-  });
-  window.addEventListener('appinstalled', () => { banner.hidden = true; toast('¡Instalada! 🎉'); });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
 
-  // ---------- Seed de ejemplo (solo primera vez) ----------
-  function seedIfEmpty() {
-    if (localStorage.getItem(STORE_KEY)) return;
+  // ---------- Seed ----------
+  function seed() {
+    if (localStorage.getItem(STORE_KEY) || localStorage.getItem('pendientes.v1')) return;
     const today = new Date();
-    const t = (offsetDays, time, title, cat) => {
-      const d = new Date(today); d.setDate(d.getDate() + offsetDays);
-      return { id: uid(), title, cat, date: ymd(d), time, done: false, remind: 60 };
+    const mk = (off, time, title, cat, priority, tags = [], subtasks = []) => {
+      const d = new Date(today); d.setDate(d.getDate() + off);
+      return { id: uid(), title, cat, priority, tags, subtasks, date: ymd(d), time, done: false, remind: 60 };
     };
     state.tasks = [
-      t(0, '18:00', 'Pedir turno médico', 'Salud'),
-      t(1, '10:00', 'Llamar al dentista', 'Salud'),
-      t(3, null, 'Entregar informe mensual', 'Trabajo'),
-      { id: uid(), title: 'Pagar factura de luz', cat: 'Trámites', date: ymd(today), time: null, done: true, remind: 60 },
+      mk(0, '18:00', 'Pedir turno médico', 'Salud', 3, ['salud'], [
+        { id: uid(), text: 'Buscar cobertura', done: false },
+        { id: uid(), text: 'Llamar a la clínica', done: false },
+        { id: uid(), text: 'Confirmar horario', done: false },
+      ]),
+      mk(0, null, 'Comprar regalo de mamá', 'General', 2, ['casa']),
+      mk(1, '10:00', 'Llamar al dentista', 'Salud', 1, ['salud']),
+      mk(3, null, 'Entregar informe mensual', 'Trabajo', 2, ['trabajo']),
+      { id: uid(), title: 'Pagar factura de luz', cat: 'Trámites', priority: 0, tags: [], subtasks: [], date: ymd(today), time: null, done: true, remind: 60 },
     ];
-    state.lists = [
-      { id: uid(), name: 'Supermercado', items: [
-        { id: uid(), text: 'Leche', done: false },
-        { id: uid(), text: 'Pan', done: false },
-        { id: uid(), text: 'Café', done: true },
-      ] },
-    ];
-    save();
+    state.lists = [{ id: uid(), name: 'Supermercado', items: [
+      { id: uid(), text: 'Leche', done: false }, { id: uid(), text: 'Pan', done: false }, { id: uid(), text: 'Café', done: true },
+    ] }];
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
   }
 
   // ---------- Init ----------
-  seedIfEmpty();
+  seed();
   updateNotifBtn();
   render();
-  dailySummary();
+  scheduleNative();
+  syncWidget();
+  pullWidgetChanges();
 
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* offline opcional */ });
-    });
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
 })();
