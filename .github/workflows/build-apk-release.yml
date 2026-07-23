@@ -1,17 +1,35 @@
 name: Compilar APK firmado (release)
 
-# Genera un APK de release FIRMADO, instalable como app definitiva.
+# Genera un APK de release FIRMADO y lo publica como GitHub Release,
+# con el APK adjunto para descargar directo (pestaña "Releases").
 #
 # Firma:
 #  - Si cargás los secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS y
-#    KEY_PASSWORD, usa TU clave estable (podés actualizar la app sin desinstalar).
+#    KEY_PASSWORD, usa TU clave estable (podés actualizar la app sin desinstalar
+#    entre versiones).
 #  - Si no hay secrets, genera una clave automática para esta corrida (el APK
 #    igual queda firmado e instalable; para actualizar tendrás que reinstalar).
 
 on:
   workflow_dispatch:
   push:
+    branches: ["Main", "main", "master"]
     tags: ["v*"]
+    paths:
+      - "index.html"
+      - "css/**"
+      - "js/**"
+      - "icons/**"
+      - "assets/**"
+      - "manifest.webmanifest"
+      - "sw.js"
+      - "android/**"
+      - "capacitor.config.json"
+      - "package.json"
+      - ".github/workflows/build-apk-release.yml"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -44,7 +62,6 @@ jobs:
           npx cap sync android
 
       - name: Preparar keystore de firma
-        id: keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -77,9 +94,33 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
-      - name: Subir APK firmado
+      - name: Preparar nombre de versión
+        id: ver
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             android/app/build/outputs/apk/release/pendientes.apk
+
+      - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4
         with:
           name: pendientes-apk-release
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      - name: Publicar GitHub Release con el APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "Pendientes ${{ steps.ver.outputs.tag }}"
+          body: |
+            APK de Android instalable, generado automáticamente desde `${{ github.ref_name }}`.
+
+            Descargá **pendientes.apk** de abajo, pasalo al teléfono e instalalo
+            (activá antes "Instalar apps de orígenes desconocidos").
+          files: android/app/build/outputs/apk/release/pendientes.apk
+          make_latest: true

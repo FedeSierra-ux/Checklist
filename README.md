@@ -49,19 +49,23 @@ app web. Ventajas sobre la PWA:
   desde ahí.
 - Se instala como app real (no como atajo).
 
-#### Opción A — Compilar en GitHub (sin instalar nada)
+#### Opción A — Descargar desde Releases (recomendada)
 
-Este repo trae workflows de GitHub Actions. En la pestaña **Actions**:
+Cada push a `Main` publica un **GitHub Release** con el APK ya adjunto:
 
-- **"Compilar APK"** → artefacto `pendientes-apk` (`app-debug.apk`). Cero
-  configuración, ideal para probar.
-- **"Compilar APK firmado (release)"** → artefacto `pendientes-apk-release`
-  (`app-release.apk`), firmado e instalable como app definitiva. Si no cargás
-  una clave propia, genera una automática para esa corrida (para *actualizar* la
-  app sin desinstalar, cargá tu clave estable en los secrets del repo:
-  `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`).
+👉 **[github.com/FedeSierra-ux/Checklist/releases/latest](https://github.com/FedeSierra-ux/Checklist/releases/latest)**
 
-Descargá el artefacto y pasalo al teléfono.
+Descargá **`pendientes.apk`** al teléfono e instalalo (activá antes "Instalar
+apps de orígenes desconocidos"). Cada nueva versión queda ahí, sin depender de
+artefactos de Actions (que expiran a los 90 días).
+
+Si no cargás una clave propia, cada build firma con una clave nueva (para
+*actualizar* la app sin desinstalar entre versiones, cargá tu clave estable en
+los secrets del repo: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+`KEY_PASSWORD`).
+
+También podés compilar sin publicar release desde **Actions → "Compilar APK"**
+(artefacto `pendientes-apk` / `app-debug.apk`, para probar rápido).
 
 #### Opción B — Compilar en tu máquina
 
