@@ -107,14 +107,33 @@
   // ---------- Rendering ----------
   const content = $('#content');
 
+  let closeSwipe = null;
   function render() {
     updateTop();
-    if (query) return renderSearch();
-    if (view === 'hoy') renderHoy();
+    if (closeSwipe) closeSwipe();
+    const flipFirst = reducedMotion() ? null : captureRects();
+    if (query) renderSearch();
+    else if (view === 'hoy') renderHoy();
     else if (view === 'semana') renderSemana();
     else if (view === 'mes') renderMes();
     else renderCompras();
+    if (flipFirst) flipPlay(flipFirst);
     checkWebReminders();
+  }
+  // FLIP: mide posiciones antes de re-render y anima el reacomodo de las filas.
+  function captureRects() {
+    const m = new Map();
+    content.querySelectorAll('.row[data-id]').forEach(r => m.set(r.dataset.id, r.getBoundingClientRect().top));
+    return m;
+  }
+  function flipPlay(first) {
+    content.querySelectorAll('.row[data-id]').forEach(r => {
+      const prev = first.get(r.dataset.id); if (prev == null) return;
+      const dy = prev - r.getBoundingClientRect().top;
+      if (Math.abs(dy) < 2) return;
+      r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }],
+        { duration: 260, easing: 'cubic-bezier(.2,.9,.3,1)' });
+    });
   }
 
   function updateTop() {
@@ -122,16 +141,33 @@
     $('#topDay').textContent = `${DIAS[now.getDay()]} · ${now.getDate()} ${MESES[now.getMonth()].slice(0, 3)}`;
     const titles = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', compras: 'Compras' };
     $('#topTitle').textContent = query ? 'Buscar' : titles[view];
-    $$('.seg-btn').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    $$('.navc-btn').forEach(b => {
+      const on = b.dataset.view === view;
+      b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
+    });
     $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || !!query);
     $('#fab').style.display = (view === 'mes' && !query) ? 'none' : 'flex';
+    updateNavCounts();
+  }
+
+  function setCnt(id, n) {
+    const el = document.getElementById(id); if (!el) return;
+    el.hidden = !n; el.textContent = n || '';
+  }
+  function updateNavCounts() {
+    const now = new Date(), todayStr = ymd(now);
+    const pend = state.tasks.filter(t => !t.done);
+    const hoyN = pend.filter(t => t.date === todayStr || (taskDate(t) && taskDate(t) < now)).length;
+    setCnt('cntHoy', hoyN);
+    setCnt('cntSemana', pend.length);
+    const comprasN = state.lists.reduce((n, l) => n + l.items.filter(i => !i.done).length, 0);
+    setCnt('cntCompras', comprasN);
   }
 
   const byPrioDate = (a, b) => (b.priority || 0) - (a.priority || 0) || ((taskDate(a) || Infinity) - (taskDate(b) || Infinity));
 
   function rowHTML(t) {
     const due = humanDue(t);
-    const flag = `<span class="flag p${t.priority || 0}"></span>`;
     const subs = t.subtasks || [];
     const subDone = subs.filter(s => s.done).length;
     const meta = [];
@@ -141,20 +177,27 @@
     const subsBlock = (expanded[t.id] && subs.length) ? `<div class="subs">${subs.map(s =>
       `<div class="subrow ${s.done ? 'done' : ''}"><button class="sck ${s.done ? 'done' : ''}" data-act="subtoggle" data-sid="${s.id}" aria-label="Marcar paso"></button><span>${esc(s.text)}</span></div>`
     ).join('')}</div>` : '';
-    return `<div class="row ${t.done ? 'done' : ''}" data-id="${t.id}">
-        <button class="ck ${t.done ? 'done' : ''} p${t.priority || 0}" data-act="toggle" aria-label="Marcar"></button>
-        <div class="main" data-act="edit">
-          <div class="line1">${t.priority ? flag : ''}<span class="tx">${esc(t.title)}</span>${due ? `<span class="when ${due.cls}">${due.label}</span>` : ''}</div>
-          ${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}
-          ${subsBlock}
+    const overdue = due && due.cls === 'due' ? ' overdue' : '';
+    const pri = (!t.done && t.priority === 3) ? ' pri3' : '';
+    return `<div class="row ${t.done ? 'done' : ''}${overdue}${pri}" data-id="${t.id}">
+        <div class="swipe-bg done-hint">✓ Completar</div>
+        <div class="swipe-actions"><button class="sa-snooze" data-act="snooze" tabindex="-1">Mañana</button><button class="sa-del" data-act="del" tabindex="-1" aria-label="Eliminar">🗑</button></div>
+        <div class="row-surface">
+          <button class="ck ${t.done ? 'done' : ''} p${t.priority || 0}" data-act="toggle" aria-label="${t.done ? 'Reactivar' : 'Completar'}"></button>
+          <div class="main" data-act="edit">
+            <div class="line1"><span class="tx">${esc(t.title)}</span>${due ? `<span class="when ${due.cls}">${due.label}</span>` : ''}</div>
+            ${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}
+            ${subsBlock}
+          </div>
+          <button class="del" data-act="del" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
         </div>
-        <button class="del" data-act="del" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
       </div>`;
   }
 
   function sectionHTML(label, arr) {
     if (!arr.length) return '';
-    return `<div class="sec">${label}<span class="count">${arr.length}</span></div>` + arr.map(rowHTML).join('');
+    const due = /vencid/i.test(label) ? ' due' : '';
+    return `<div class="sec${due}"><span class="lead">${label}</span><span class="count">${arr.length}</span></div>` + arr.map(rowHTML).join('');
   }
 
   function renderHoy() {
@@ -205,8 +248,10 @@
     for (let d = 1; d <= days; d++) {
       const ds = `${y}-${pad(m + 1)}-${pad(d)}`;
       const arr = map[ds] || [];
-      const pend = arr.filter(t => !t.done).length, dn = arr.length - pend;
-      let pips = arr.length ? '<div class="pips">' + (pend ? '<i></i>' : '') + (dn ? '<i class="done"></i>' : '') + '</div>' : '';
+      const pendTasks = arr.filter(t => !t.done);
+      const pend = pendTasks.length, dn = arr.length - pend;
+      const maxP = pendTasks.reduce((m, t) => Math.max(m, t.priority || 0), 0);
+      let pips = arr.length ? '<div class="pips">' + (pend ? `<i class="p${maxP}"></i>` : '') + (dn ? '<i class="done"></i>' : '') + '</div>' : '';
       const cls = ['cell', 'cur']; if (ds === todayStr) cls.push('today'); if (ds === selectedDay) cls.push('sel');
       cells += `<div class="${cls.join(' ')}" data-day="${ds}">${d}${pips}</div>`;
     }
@@ -223,7 +268,7 @@
     const [y, mo, d] = selectedDay.split('-').map(Number);
     const dt = new Date(y, mo - 1, d);
     const tasks = state.tasks.filter(t => t.date === selectedDay).sort(byPrioDate);
-    box.innerHTML = `<div class="sec">${DIAS[dt.getDay()]} ${d} de ${MESES[mo - 1]}<span class="count">${tasks.length} ${tasks.length === 1 ? 'tarea' : 'tareas'}</span></div>`
+    box.innerHTML = `<div class="sec"><span class="lead">${DIAS[dt.getDay()]} ${d} de ${MESES[mo - 1]}</span><span class="count">${tasks.length} ${tasks.length === 1 ? 'tarea' : 'tareas'}</span></div>`
       + (tasks.length ? tasks.map(rowHTML).join('') : `<div class="empty" style="padding:22px"><p>Nada agendado.</p></div>`)
       + `<button class="btn primary" id="addForDay" style="margin-top:12px">+ Agregar tarea para este día</button>`;
   }
@@ -252,7 +297,7 @@
       return t.title.toLowerCase().includes(q) || (t.tags || []).some(tg => tg.includes(q)) || (t.cat || '').toLowerCase().includes(q);
     }).sort(byPrioDate);
     content.innerHTML = res.length
-      ? `<div class="sec">Resultados<span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
+      ? `<div class="sec"><span class="lead">Resultados</span><span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
       : `<div class="empty" style="padding:44px 20px"><b>Sin resultados</b><p>No hay tareas que coincidan con "${esc(query)}".</p></div>`;
   }
 
@@ -295,9 +340,10 @@
 
     const card = actEl.closest('.row'); if (!card) return;
     const id = card.dataset.id;
-    if (act === 'toggle') toggleTask(id);
+    if (act === 'toggle') toggleTask(id, card);
     else if (act === 'edit') openSheet(id);
     else if (act === 'del') delTask(id);
+    else if (act === 'snooze') snoozeTask(id);
     else if (act === 'expand') { expanded[id] = !expanded[id]; render(); }
     else if (act === 'subtoggle') toggleSub(id, actEl.dataset.sid);
   });
@@ -311,14 +357,37 @@
   });
 
   // ---------- Task actions ----------
-  function toggleTask(id) {
+  function toggleTask(id, rowEl) {
     const t = state.tasks.find(x => x.id === id); if (!t) return;
-    t.done = !t.done; if (t.done) delete state.notified[id];
+    const willDone = !t.done;
+    haptic();
+    // Al completar: dibujar el tilde, tachar y deslizar afuera antes de reordenar.
+    if (willDone && rowEl && !reducedMotion()) {
+      rowEl.classList.add('completing');
+      setTimeout(() => rowEl.classList.add('slideout'), 330);
+      setTimeout(() => {
+        t.done = true; delete state.notified[id];
+        save(); render(); toast('✓ Completada');
+      }, 630);
+      return;
+    }
+    t.done = willDone; if (t.done) delete state.notified[id];
     save(); render(); toast(t.done ? '✓ Completada' : 'Reactivada');
   }
   function delTask(id) {
     state.tasks = state.tasks.filter(x => x.id !== id); delete state.notified[id];
     save(); render(); toast('Tarea eliminada');
+  }
+  // Posponer: mover la fecha al día siguiente (si no tenía, la agenda para mañana).
+  function snoozeTask(id) {
+    const t = state.tasks.find(x => x.id === id); if (!t) return;
+    const base = t.date ? new Date(t.date + 'T00:00') : new Date();
+    base.setDate(base.getDate() + 1);
+    t.date = ymd(base); delete state.notified[id];
+    haptic(); save(); render(); toast('→ Pospuesta a mañana');
+  }
+  function reducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches;
   }
   function toggleSub(id, sid) {
     const t = state.tasks.find(x => x.id === id); if (!t) return;
@@ -442,7 +511,7 @@
   overlay.addEventListener('click', (e) => { if (e.target === overlay) hideSheet(); });
 
   // ---------- Nav / search ----------
-  $$('.seg-btn').forEach(btn => btn.addEventListener('click', () => {
+  $$('.navc-btn').forEach(btn => btn.addEventListener('click', () => {
     view = btn.dataset.view; closeSearch(false);
     if (view === 'mes' && !selectedDay) selectedDay = ymd(new Date());
     render();
@@ -475,6 +544,15 @@
   const LocalNotifications = () => Cap?.Plugins?.LocalNotifications;
   const Preferences = () => Cap?.Plugins?.Preferences;
   const WidgetBridge = (isNative && Cap.registerPlugin) ? Cap.registerPlugin('WidgetBridge') : null;
+  const Haptics = () => Cap?.Plugins?.Haptics;
+
+  // Vibración corta al completar / posponer. Nativo: plugin Haptics; web: vibrate.
+  function haptic() {
+    try {
+      if (isNative && Haptics()) Haptics().impact({ style: 'LIGHT' });
+      else if (navigator.vibrate) navigator.vibrate(10);
+    } catch (e) { /* ignore */ }
+  }
 
   function reminderTime(t) {
     const dt = taskDate(t); if (!dt) return null;
@@ -591,6 +669,146 @@
   // ---------- Install (PWA fallback) ----------
   let deferredPrompt = null;
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
+
+  // ============================================================
+  //  Gestos: swipe (completar / posponer / eliminar) y drag al día
+  // ============================================================
+
+  // --- Swipe en filas de tareas (Hoy / Semana / búsqueda) ---
+  (function swipe() {
+    const OPEN = -140;           // px que se abre para revelar acciones
+    let row = null, surf = null, id = null, x0 = 0, y0 = 0, dx = 0, mode = null, tx0 = 0, consumed = false;
+    let openRow = null;
+
+    function reset() {
+      if (openRow) {
+        const s = openRow.querySelector('.row-surface');
+        if (s) s.style.transform = '';
+        openRow.classList.remove('show-done'); openRow = null;
+      }
+    }
+    closeSwipe = reset;
+
+    content.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const r = e.target.closest('.row[data-id]');
+      if (!r || r.closest('#dayDetail')) { return; }        // en el calendario manda el drag
+      if (e.target.closest('.swipe-actions')) return;        // dejar que el botón haga lo suyo
+      if (openRow && openRow !== r) reset();
+      row = r; surf = r.querySelector('.row-surface'); id = r.dataset.id;
+      x0 = e.clientX; y0 = e.clientY;
+      dx = 0; mode = null; tx0 = (openRow === r) ? OPEN : 0;
+    });
+
+    content.addEventListener('pointermove', (e) => {
+      if (!row || !surf) return;
+      const ddx = e.clientX - x0, ddy = e.clientY - y0;
+      if (mode === null) {
+        if (Math.abs(ddx) < 6 && Math.abs(ddy) < 6) return;
+        mode = Math.abs(ddx) > Math.abs(ddy) ? 'h' : 'v';
+        if (mode === 'h') surf.classList.add('swiping');
+      }
+      if (mode !== 'h') { row = null; surf = null; return; }
+      e.preventDefault();
+      let t = tx0 + ddx;
+      if (t > 0) { t = Math.min(t, 120); row.classList.add('show-done'); }
+      else { t = Math.max(t, OPEN - 30); row.classList.remove('show-done'); }
+      dx = t; surf.style.transform = `translateX(${t}px)`;
+    });
+
+    function finish() {
+      if (!row || !surf) { row = null; surf = null; return; }
+      const r = row, s = surf, theId = id; row = null; surf = null;
+      s.classList.remove('swiping');
+      if (mode !== 'h') return;                     // fue un tap: lo maneja el click
+      consumed = true;
+      if (dx > 80) {                                // → completar
+        s.style.transform = ''; r.classList.remove('show-done');
+        if (openRow === r) openRow = null;
+        toggleTask(theId, r);
+      } else if (dx < -70) {                        // ← revelar acciones
+        s.style.transform = `translateX(${OPEN}px)`; openRow = r;
+      } else {                                      // no alcanzó: volver
+        s.style.transform = ''; r.classList.remove('show-done');
+        if (openRow === r) openRow = null;
+      }
+    }
+    content.addEventListener('pointerup', finish);
+    content.addEventListener('pointercancel', () => {
+      if (surf) surf.classList.remove('swiping');
+      if (surf) surf.style.transform = (openRow === row) ? `translateX(${OPEN}px)` : '';
+      row = null; surf = null;
+    });
+
+    // Un tap fuera cierra las acciones abiertas.
+    document.addEventListener('pointerdown', (e) => {
+      if (openRow && !e.target.closest('.row[data-id]')) reset();
+    });
+    // Evita que el click posterior a un swipe dispare toggle/edit.
+    content.addEventListener('click', (e) => {
+      if (consumed) { e.stopPropagation(); e.preventDefault(); consumed = false; }
+    }, true);
+  })();
+
+  // --- Drag de una tarea a otro día (vista Mes, sobre el detalle del día) ---
+  (function dragToDay() {
+    let src = null, id = null, ghost = null, timer = null, active = false, sx = 0, sy = 0;
+
+    content.addEventListener('pointerdown', (e) => {
+      if (view !== 'mes') return;
+      const r = e.target.closest('#dayDetail .row[data-id]');
+      if (!r || e.target.closest('.swipe-actions')) return;
+      src = r; id = r.dataset.id; sx = e.clientX; sy = e.clientY; active = false;
+      timer = setTimeout(() => startDrag(), 320);            // long-press
+    });
+    function startDrag() {
+      if (!src) return;
+      active = true; haptic(); src.classList.add('dragging');
+      const t = state.tasks.find(x => x.id === id);
+      ghost = document.createElement('div');
+      ghost.className = 'drag-ghost'; ghost.textContent = t ? t.title : '';
+      document.body.appendChild(ghost); moveGhost(sx, sy);
+    }
+    function moveGhost(x, y) { if (ghost) { ghost.style.left = (x + 12) + 'px'; ghost.style.top = (y - 12) + 'px'; } }
+    function cellUnder(x, y) { const el = document.elementFromPoint(x, y); return el ? el.closest('.cell[data-day]') : null; }
+
+    content.addEventListener('pointermove', (e) => {
+      if (!src) return;
+      if (!active) {
+        if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) { clearTimeout(timer); src = null; }
+        return;
+      }
+      e.preventDefault(); moveGhost(e.clientX, e.clientY);
+      const cell = cellUnder(e.clientX, e.clientY);
+      document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+      if (cell) cell.classList.add('drop-target');
+    });
+    function end(e) {
+      clearTimeout(timer);
+      const wasActive = active;
+      if (active) {
+        const cell = cellUnder(e.clientX, e.clientY);
+        if (cell) {
+          const t = state.tasks.find(x => x.id === id);
+          if (t && t.date !== cell.dataset.day) {
+            t.date = cell.dataset.day; delete state.notified[id];
+            selectedDay = cell.dataset.day; haptic(); save();
+            toast('Movida al ' + cell.dataset.day.slice(8) + '/' + cell.dataset.day.slice(5, 7));
+          }
+        }
+      }
+      cleanup(wasActive);
+    }
+    function cleanup(rerender) {
+      if (ghost) { ghost.remove(); ghost = null; }
+      document.querySelectorAll('.cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+      if (src) src.classList.remove('dragging');
+      src = null; active = false;
+      if (rerender) renderMes();
+    }
+    content.addEventListener('pointerup', end);
+    content.addEventListener('pointercancel', () => { clearTimeout(timer); cleanup(false); });
+  })();
 
   // ---------- Seed ----------
   function seed() {
