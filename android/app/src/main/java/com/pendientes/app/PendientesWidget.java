@@ -80,6 +80,9 @@ public class PendientesWidget extends AppWidgetProvider {
     @Override
     public void onUpdate(Context context, AppWidgetManager mgr, int[] ids) {
         for (int id : ids) updateWidget(context, mgr, id);
+        // Sin esto la RemoteViewsFactory se reutiliza y no vuelve a leer los
+        // datos, así que el widget quedaría mostrando la lista vieja.
+        mgr.notifyAppWidgetViewDataChanged(ids, R.id.widget_list);
     }
 
     @Override
@@ -99,8 +102,25 @@ public class PendientesWidget extends AppWidgetProvider {
 
     private void markDone(Context context, String id) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        // Avisar a la app para que marque la tarea como hecha al abrir
-        prefs.edit().putString("widget_toggle", id).apply();
+        // Avisar a la app para que marque la tarea como hecha al abrir.
+        // Se acumulan los ids: el usuario puede tildar varias seguidas.
+        JSONArray pending = new JSONArray();
+        String rawPending = prefs.getString("widget_toggle", null);
+        if (rawPending != null) {
+            try {
+                pending = new JSONArray(rawPending);
+            } catch (Exception e) {
+                // Formato viejo: un id suelto sin comillas
+                pending = new JSONArray();
+                pending.put(rawPending);
+            }
+        }
+        boolean already = false;
+        for (int i = 0; i < pending.length(); i++) {
+            if (id.equals(pending.optString(i))) { already = true; break; }
+        }
+        if (!already) pending.put(id);
+        prefs.edit().putString("widget_toggle", pending.toString()).apply();
         // Sacarla de la lista del widget para feedback inmediato
         JSONArray arr = readTasks(context);
         JSONArray out = new JSONArray();
