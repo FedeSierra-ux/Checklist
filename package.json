@@ -1,5 +1,5 @@
 {
-  "name": "pendientes",
+  "name": "tudu",
   "version": "1.0.0",
   "description": "App de tareas pendientes con prioridades, vista Hoy, subtareas, etiquetas, notificaciones y widget. Web (PWA) + Android (APK vía Capacitor).",
   "private": true,

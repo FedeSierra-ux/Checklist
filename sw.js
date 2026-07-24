@@ -1,5 +1,5 @@
-/* Service Worker — cache offline para Pendientes */
-const CACHE = 'pendientes-v1';
+/* Service Worker — cache offline para Tudu */
+const CACHE = 'tudu-v1';
 const ASSETS = [
   './',
   './index.html',

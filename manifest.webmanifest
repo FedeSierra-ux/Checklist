@@ -1,6 +1,6 @@
 {
-  "name": "Pendientes",
-  "short_name": "Pendientes",
+  "name": "Tudu",
+  "short_name": "Tudu",
   "description": "Tus tareas pendientes ordenadas por vencimiento: semana, mes, listas de compras y avisos.",
   "start_url": "./index.html",
   "scope": "./",

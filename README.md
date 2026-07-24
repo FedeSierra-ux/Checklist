@@ -1,4 +1,4 @@
-# Pendientes
+# Tudu
 
 App de tareas pendientes, minimalista y enfocada. Corre como **web (PWA)** y como
 **app Android (APK)** con notificaciones del sistema y widget en la pantalla de
@@ -55,7 +55,7 @@ Cada push a `Main` publica un **GitHub Release** con el APK ya adjunto:
 
 👉 **[github.com/FedeSierra-ux/Checklist/releases/latest](https://github.com/FedeSierra-ux/Checklist/releases/latest)**
 
-Descargá **`pendientes.apk`** al teléfono e instalalo (activá antes "Instalar
+Descargá **`tudu.apk`** al teléfono e instalalo (activá antes "Instalar
 apps de orígenes desconocidos"). Cada nueva versión queda ahí, sin depender de
 artefactos de Actions (que expiran a los 90 días).
 
@@ -65,7 +65,7 @@ los secrets del repo: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
 `KEY_PASSWORD`).
 
 También podés compilar sin publicar release desde **Actions → "Compilar APK"**
-(artefacto `pendientes-apk` / `app-debug.apk`, para probar rápido).
+(artefacto `tudu-apk` / `app-debug.apk`, para probar rápido).
 
 #### Opción B — Compilar en tu máquina
 

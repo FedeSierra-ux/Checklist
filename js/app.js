@@ -1,4 +1,4 @@
-/* Pendientes — tareas con prioridad, vista Hoy, subtareas, etiquetas, búsqueda.
+/* Tudu — tareas con prioridad, vista Hoy, subtareas, etiquetas, búsqueda.
    Corre como web (PWA) y dentro del APK (Capacitor): en ese caso usa
    notificaciones nativas del sistema (disparan con la app cerrada) y
    sincroniza datos para el widget de pantalla de inicio. */
