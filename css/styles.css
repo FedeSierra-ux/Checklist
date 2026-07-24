@@ -82,12 +82,15 @@ button,input,select{font-family:inherit}
 .bar>i{display:block;height:100%;border-radius:99px;background:var(--accent);transition:width .35s ease}
 .pct{font-size:12px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
 
-/* Segmented nav */
-.seg{display:flex;gap:20px;padding:12px 22px 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
-.seg::-webkit-scrollbar{display:none}
-.seg-btn{border:0;background:none;font-size:14.5px;font-weight:600;color:var(--ink2);padding:2px 0 11px;position:relative;cursor:pointer;white-space:nowrap;transition:.15s}
-.seg-btn.on{color:var(--ink);font-weight:700}
-.seg-btn.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2.5px;background:var(--accent);border-radius:2px}
+/* Nav: chips con ícono y contador */
+.navc{display:flex;gap:8px;padding:12px 22px 14px;overflow-x:auto;scrollbar-width:none}
+.navc::-webkit-scrollbar{display:none}
+.navc-btn{flex:none;display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink2-aa);font-size:13px;font-weight:700;padding:8px 14px;border-radius:99px;cursor:pointer;white-space:nowrap;transition:.15s}
+.navc-btn svg{flex:none;opacity:.85}
+.navc-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.navc-btn.on svg{opacity:1}
+.navc-btn .cnt{font-size:10px;font-weight:800;background:var(--line-soft);color:var(--ink2-aa);padding:1px 6px;border-radius:99px}
+.navc-btn.on .cnt{background:rgba(255,255,255,.28);color:#fff}
 
 /* Content */
 .content{flex:1;overflow-y:auto;padding:4px 22px 120px;-webkit-overflow-scrolling:touch}
@@ -247,7 +250,7 @@ button,input,select{font-family:inherit}
 
 /* Foco de teclado visible (accesibilidad) */
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
-.seg-btn:focus-visible,.tag:focus-visible{outline-offset:3px}
+.navc-btn:focus-visible,.tag:focus-visible{outline-offset:3px}
 .field input:focus-visible,.field select:focus-visible,.shop-add input:focus-visible{outline-offset:-1px}
 
 /* Vencidas y prioridad Alta: franja roja + fondo cálido para que salten */

@@ -141,9 +141,27 @@
     $('#topDay').textContent = `${DIAS[now.getDay()]} · ${now.getDate()} ${MESES[now.getMonth()].slice(0, 3)}`;
     const titles = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', compras: 'Compras' };
     $('#topTitle').textContent = query ? 'Buscar' : titles[view];
-    $$('.seg-btn').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    $$('.navc-btn').forEach(b => {
+      const on = b.dataset.view === view;
+      b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
+    });
     $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || !!query);
     $('#fab').style.display = (view === 'mes' && !query) ? 'none' : 'flex';
+    updateNavCounts();
+  }
+
+  function setCnt(id, n) {
+    const el = document.getElementById(id); if (!el) return;
+    el.hidden = !n; el.textContent = n || '';
+  }
+  function updateNavCounts() {
+    const now = new Date(), todayStr = ymd(now);
+    const pend = state.tasks.filter(t => !t.done);
+    const hoyN = pend.filter(t => t.date === todayStr || (taskDate(t) && taskDate(t) < now)).length;
+    setCnt('cntHoy', hoyN);
+    setCnt('cntSemana', pend.length);
+    const comprasN = state.lists.reduce((n, l) => n + l.items.filter(i => !i.done).length, 0);
+    setCnt('cntCompras', comprasN);
   }
 
   const byPrioDate = (a, b) => (b.priority || 0) - (a.priority || 0) || ((taskDate(a) || Infinity) - (taskDate(b) || Infinity));
@@ -493,7 +511,7 @@
   overlay.addEventListener('click', (e) => { if (e.target === overlay) hideSheet(); });
 
   // ---------- Nav / search ----------
-  $$('.seg-btn').forEach(btn => btn.addEventListener('click', () => {
+  $$('.navc-btn').forEach(btn => btn.addEventListener('click', () => {
     view = btn.dataset.view; closeSearch(false);
     if (view === 'mes' && !selectedDay) selectedDay = ymd(new Date());
     render();
