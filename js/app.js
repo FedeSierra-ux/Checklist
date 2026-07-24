@@ -150,7 +150,6 @@
 
   function rowHTML(t) {
     const due = humanDue(t);
-    const flag = `<span class="flag p${t.priority || 0}"></span>`;
     const subs = t.subtasks || [];
     const subDone = subs.filter(s => s.done).length;
     const meta = [];
@@ -161,13 +160,14 @@
       `<div class="subrow ${s.done ? 'done' : ''}"><button class="sck ${s.done ? 'done' : ''}" data-act="subtoggle" data-sid="${s.id}" aria-label="Marcar paso"></button><span>${esc(s.text)}</span></div>`
     ).join('')}</div>` : '';
     const overdue = due && due.cls === 'due' ? ' overdue' : '';
-    return `<div class="row ${t.done ? 'done' : ''}${overdue}" data-id="${t.id}">
+    const pri = (!t.done && t.priority === 3) ? ' pri3' : '';
+    return `<div class="row ${t.done ? 'done' : ''}${overdue}${pri}" data-id="${t.id}">
         <div class="swipe-bg done-hint">✓ Completar</div>
         <div class="swipe-actions"><button class="sa-snooze" data-act="snooze" tabindex="-1">Mañana</button><button class="sa-del" data-act="del" tabindex="-1" aria-label="Eliminar">🗑</button></div>
         <div class="row-surface">
           <button class="ck ${t.done ? 'done' : ''} p${t.priority || 0}" data-act="toggle" aria-label="${t.done ? 'Reactivar' : 'Completar'}"></button>
           <div class="main" data-act="edit">
-            <div class="line1">${t.priority ? flag : ''}<span class="tx">${esc(t.title)}</span>${due ? `<span class="when ${due.cls}">${due.label}</span>` : ''}</div>
+            <div class="line1"><span class="tx">${esc(t.title)}</span>${due ? `<span class="when ${due.cls}">${due.label}</span>` : ''}</div>
             ${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}
             ${subsBlock}
           </div>
@@ -178,7 +178,8 @@
 
   function sectionHTML(label, arr) {
     if (!arr.length) return '';
-    return `<div class="sec">${label}<span class="count">${arr.length}</span></div>` + arr.map(rowHTML).join('');
+    const due = /vencid/i.test(label) ? ' due' : '';
+    return `<div class="sec${due}"><span class="lead">${label}</span><span class="count">${arr.length}</span></div>` + arr.map(rowHTML).join('');
   }
 
   function renderHoy() {
@@ -249,7 +250,7 @@
     const [y, mo, d] = selectedDay.split('-').map(Number);
     const dt = new Date(y, mo - 1, d);
     const tasks = state.tasks.filter(t => t.date === selectedDay).sort(byPrioDate);
-    box.innerHTML = `<div class="sec">${DIAS[dt.getDay()]} ${d} de ${MESES[mo - 1]}<span class="count">${tasks.length} ${tasks.length === 1 ? 'tarea' : 'tareas'}</span></div>`
+    box.innerHTML = `<div class="sec"><span class="lead">${DIAS[dt.getDay()]} ${d} de ${MESES[mo - 1]}</span><span class="count">${tasks.length} ${tasks.length === 1 ? 'tarea' : 'tareas'}</span></div>`
       + (tasks.length ? tasks.map(rowHTML).join('') : `<div class="empty" style="padding:22px"><p>Nada agendado.</p></div>`)
       + `<button class="btn primary" id="addForDay" style="margin-top:12px">+ Agregar tarea para este día</button>`;
   }
@@ -278,7 +279,7 @@
       return t.title.toLowerCase().includes(q) || (t.tags || []).some(tg => tg.includes(q)) || (t.cat || '').toLowerCase().includes(q);
     }).sort(byPrioDate);
     content.innerHTML = res.length
-      ? `<div class="sec">Resultados<span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
+      ? `<div class="sec"><span class="lead">Resultados</span><span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
       : `<div class="empty" style="padding:44px 20px"><b>Sin resultados</b><p>No hay tareas que coincidan con "${esc(query)}".</p></div>`;
   }
 
