@@ -77,13 +77,13 @@ jobs:
             echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
           else
             echo "Sin secrets: genero una keystore automática para esta corrida."
-            PW="pendientes$(date +%s)"
-            keytool -genkeypair -v -keystore "$KS" -alias pendientes \
+            PW="tudu$(date +%s)"
+            keytool -genkeypair -v -keystore "$KS" -alias tudu \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "$PW" -keypass "$PW" \
-              -dname "CN=Pendientes, OU=App, O=Pendientes, L=, S=, C=AR"
+              -dname "CN=Tudu, OU=App, O=Tudu, L=, S=, C=AR"
             echo "KEYSTORE_PASSWORD=$PW" >> "$GITHUB_ENV"
-            echo "KEY_ALIAS=pendientes" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=tudu" >> "$GITHUB_ENV"
             echo "KEY_PASSWORD=$PW" >> "$GITHUB_ENV"
           fi
           echo "KEYSTORE_FILE=$KS" >> "$GITHUB_ENV"
@@ -103,12 +103,12 @@ jobs:
             echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           fi
           cp android/app/build/outputs/apk/release/app-release.apk \
-             android/app/build/outputs/apk/release/pendientes.apk
+             android/app/build/outputs/apk/release/tudu.apk
 
       - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: pendientes-apk-release
+          name: tudu-apk-release
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
@@ -116,11 +116,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: "Pendientes ${{ steps.ver.outputs.tag }}"
+          name: "Tudu ${{ steps.ver.outputs.tag }}"
           body: |
             APK de Android instalable, generado automáticamente desde `${{ github.ref_name }}`.
 
-            Descargá **pendientes.apk** de abajo, pasalo al teléfono e instalalo
+            Descargá **tudu.apk** de abajo, pasalo al teléfono e instalalo
             (activá antes "Instalar apps de orígenes desconocidos").
-          files: android/app/build/outputs/apk/release/pendientes.apk
+          files: android/app/build/outputs/apk/release/tudu.apk
           make_latest: true
