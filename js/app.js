@@ -543,7 +543,11 @@
   const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
   const LocalNotifications = () => Cap?.Plugins?.LocalNotifications;
   const Preferences = () => Cap?.Plugins?.Preferences;
-  const WidgetBridge = (isNative && Cap.registerPlugin) ? Cap.registerPlugin('WidgetBridge') : null;
+  // Capacitor inyecta un proxy en Capacitor.Plugins por cada plugin nativo
+  // registrado; registerPlugin() sólo existe si se carga el bundle JS de
+  // @capacitor/core, que esta app no usa. Por eso vamos primero por Plugins.
+  const WidgetBridge = () => Cap?.Plugins?.WidgetBridge
+    || (Cap?.registerPlugin ? Cap.registerPlugin('WidgetBridge') : null);
   const Haptics = () => Cap?.Plugins?.Haptics;
 
   // Vibración corta al completar / posponer. Nativo: plugin Haptics; web: vibrate.
@@ -602,7 +606,8 @@
     try {
       await Preferences().set({ key: 'widget_tasks', value: JSON.stringify(items) });
       await Preferences().set({ key: 'widget_updated', value: String(Date.now()) });
-      if (WidgetBridge?.refresh) WidgetBridge.refresh().catch(() => {});
+      const wb = WidgetBridge();
+      if (wb?.refresh) await Promise.resolve(wb.refresh()).catch(() => {});
     } catch (e) { /* silencioso */ }
   }
   // Al volver a la app, aplicar cambios hechos desde el widget (marcar hecho).
@@ -610,12 +615,19 @@
     if (!isNative || !Preferences()) return;
     try {
       const { value } = await Preferences().get({ key: 'widget_toggle' });
-      if (value) {
-        const t = state.tasks.find(x => x.id === value);
-        if (t) { t.done = true; }
-        await Preferences().remove({ key: 'widget_toggle' });
-        save(); render();
-      }
+      if (!value) return;
+      // El widget acumula los ids tildados en un array; toleramos el formato
+      // viejo (un solo id suelto) para no perder cambios al actualizar.
+      let ids;
+      try { const p = JSON.parse(value); ids = Array.isArray(p) ? p : [String(p)]; }
+      catch (e) { ids = [value]; }
+      let changed = false;
+      ids.forEach(id => {
+        const t = state.tasks.find(x => x.id === id);
+        if (t && !t.done) { t.done = true; delete state.notified[id]; changed = true; }
+      });
+      await Preferences().remove({ key: 'widget_toggle' });
+      if (changed) { save(); render(); }
     } catch (e) { /* silencioso */ }
   }
 
