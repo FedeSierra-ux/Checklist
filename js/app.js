@@ -31,22 +31,36 @@
       const old = localStorage.getItem('pendientes.v1');
       if (old) return migrate(JSON.parse(old));
     } catch (e) { /* ignore */ }
-    return { tasks: [], lists: [], notified: {} };
+    return { tasks: [], lists: [], notified: {}, trash: {} };
   }
   function migrate(s) {
+    // `u` = última modificación (ms). La usa la sincronización para decidir
+    // qué versión gana; lo que venía sin marca se toma como "de ahora".
+    const t0 = Date.now();
     s.tasks = (s.tasks || []).map(t => ({
-      priority: 0, tags: [], subtasks: [], ...t,
+      priority: 0, tags: [], subtasks: [], u: t0, ...t,
     }));
-    s.lists = s.lists || [];
+    s.lists = (s.lists || []).map(l => ({
+      u: t0, ...l, items: (l.items || []).map(i => ({ u: t0, ...i })),
+    }));
     s.notified = s.notified || {};
+    s.trash = s.trash || {};   // id -> ms de borrado (tumbas, para no revivir)
     return s;
   }
-  function save() {
+  // Guarda en el dispositivo y reprograma avisos/widget. No toca la nube.
+  function persist() {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
     scheduleNative();
     syncWidget();
   }
+  function save() {
+    persist();
+    Sync()?.schedulePush();
+  }
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  // Marca un objeto como modificado recién / lo manda a la tumba.
+  const touch = (o) => { if (o) o.u = Date.now(); return o; };
+  const tomb = (id) => { state.trash[id] = Date.now(); };
 
   // ---------- Date helpers ----------
   const pad = (n) => String(n).padStart(2, '0');
@@ -353,7 +367,7 @@
     e.preventDefault();
     const input = form.querySelector('input'); const text = input.value.trim(); if (!text) return;
     const list = state.lists.find(l => l.id === form.dataset.list);
-    if (list) { list.items.push({ id: uid(), text, done: false }); save(); renderCompras(); }
+    if (list) { list.items.push({ id: uid(), text, done: false, u: Date.now() }); save(); renderCompras(); }
   });
 
   // ---------- Task actions ----------
@@ -366,16 +380,17 @@
       rowEl.classList.add('completing');
       setTimeout(() => rowEl.classList.add('slideout'), 330);
       setTimeout(() => {
-        t.done = true; delete state.notified[id];
+        t.done = true; touch(t); delete state.notified[id];
         save(); render(); toast('✓ Completada');
       }, 630);
       return;
     }
-    t.done = willDone; if (t.done) delete state.notified[id];
+    t.done = willDone; touch(t); if (t.done) delete state.notified[id];
     save(); render(); toast(t.done ? '✓ Completada' : 'Reactivada');
   }
   function delTask(id) {
-    state.tasks = state.tasks.filter(x => x.id !== id); delete state.notified[id];
+    state.tasks = state.tasks.filter(x => x.id !== id);
+    tomb(id); delete state.notified[id];
     save(); render(); toast('Tarea eliminada');
   }
   // Posponer: mover la fecha al día siguiente (si no tenía, la agenda para mañana).
@@ -383,7 +398,7 @@
     const t = state.tasks.find(x => x.id === id); if (!t) return;
     const base = t.date ? new Date(t.date + 'T00:00') : new Date();
     base.setDate(base.getDate() + 1);
-    t.date = ymd(base); delete state.notified[id];
+    t.date = ymd(base); touch(t); delete state.notified[id];
     haptic(); save(); render(); toast('→ Pospuesta a mañana');
   }
   function reducedMotion() {
@@ -392,18 +407,19 @@
   function toggleSub(id, sid) {
     const t = state.tasks.find(x => x.id === id); if (!t) return;
     const s = (t.subtasks || []).find(x => x.id === sid); if (!s) return;
-    s.done = !s.done; save(); render();
+    s.done = !s.done; touch(s); touch(t); save(); render();
   }
   function shopItem(listId, itemId, action) {
     const list = state.lists.find(l => l.id === listId); if (!list) return;
-    if (action === 'toggle') { const it = list.items.find(i => i.id === itemId); if (it) it.done = !it.done; }
-    else list.items = list.items.filter(i => i.id !== itemId);
+    if (action === 'toggle') { const it = list.items.find(i => i.id === itemId); if (it) { it.done = !it.done; touch(it); } }
+    else { list.items = list.items.filter(i => i.id !== itemId); tomb(itemId); }
     save(); renderCompras();
   }
   function delList(id) {
     const list = state.lists.find(l => l.id === id);
     if (list && !confirm(`¿Eliminar la lista "${list.name}"?`)) return;
-    state.lists = state.lists.filter(l => l.id !== id); save(); renderCompras();
+    state.lists = state.lists.filter(l => l.id !== id); tomb(id);
+    save(); renderCompras();
   }
 
   // ---------- Sheet ----------
@@ -473,7 +489,7 @@
     const raw = $('#fTitle').value.trim(); if (!raw) return;
 
     if (editingId === '__list__') {
-      state.lists.unshift({ id: uid(), name: raw, items: [] });
+      state.lists.unshift({ id: uid(), name: raw, items: [], u: Date.now() });
       save(); hideSheet(); renderCompras(); toast('Lista creada'); return;
     }
 
@@ -492,8 +508,8 @@
       subtasks: draftSubs,
       remind: Number($('#fRemind').value),
     };
-    if (editingId) { const t = state.tasks.find(x => x.id === editingId); Object.assign(t, data); delete state.notified[t.id]; }
-    else state.tasks.push({ id: uid(), done: false, ...data });
+    if (editingId) { const t = state.tasks.find(x => x.id === editingId); Object.assign(t, data); touch(t); delete state.notified[t.id]; }
+    else state.tasks.push({ id: uid(), done: false, u: Date.now(), ...data });
     save(); hideSheet();
     if (view === 'mes' && data.date) selectedDay = data.date;
     render(); toast(editingId ? 'Tarea actualizada' : 'Tarea agregada'); maybeAskNotify();
@@ -624,7 +640,7 @@
       let changed = false;
       ids.forEach(id => {
         const t = state.tasks.find(x => x.id === id);
-        if (t && !t.done) { t.done = true; delete state.notified[id]; changed = true; }
+        if (t && !t.done) { t.done = true; touch(t); delete state.notified[id]; changed = true; }
       });
       await Preferences().remove({ key: 'widget_toggle' });
       if (changed) { save(); render(); }
@@ -803,7 +819,7 @@
         if (cell) {
           const t = state.tasks.find(x => x.id === id);
           if (t && t.date !== cell.dataset.day) {
-            t.date = cell.dataset.day; delete state.notified[id];
+            t.date = cell.dataset.day; touch(t); delete state.notified[id];
             selectedDay = cell.dataset.day; haptic(); save();
             toast('Movida al ' + cell.dataset.day.slice(8) + '/' + cell.dataset.day.slice(5, 7));
           }
@@ -822,13 +838,126 @@
     content.addEventListener('pointercancel', () => { clearTimeout(timer); cleanup(false); });
   })();
 
+  // ============================================================
+  //  Sincronización entre dispositivos (PC ⇆ celular)
+  // ============================================================
+  const Sync = () => window.TuduSync;
+
+  // Lo que viaja a la nube. `notified` queda afuera a propósito: es memoria
+  // local de qué avisos ya sonaron en ESTE dispositivo.
+  const syncPayload = () => ({ tasks: state.tasks, lists: state.lists, trash: state.trash });
+
+  function applyRemote(p) {
+    state.tasks = p.tasks || [];
+    state.lists = p.lists || [];
+    state.trash = p.trash || {};
+    persist();
+    render();
+  }
+
+  const syncOverlay = $('#syncOverlay');
+  const syncBtn = $('#syncBtn');
+
+  function agoLabel(ms) {
+    if (!ms) return 'nunca';
+    const s = Math.round((Date.now() - ms) / 1000);
+    if (s < 60) return 'recién';
+    if (s < 3600) return `hace ${Math.round(s / 60)} min`;
+    if (s < 86400) return `hace ${Math.round(s / 3600)} h`;
+    return `hace ${Math.round(s / 86400)} d`;
+  }
+
+  function renderSync(st = Sync()?.status()) {
+    if (!st || !syncOverlay) return;
+    syncBtn.classList.toggle('active', st.on && !st.error);
+    syncBtn.title = st.on ? 'Sincronización activa' : 'Sincronizar con otros dispositivos';
+
+    $('#syncSetup').hidden = st.configured;
+    $('#syncRoom').hidden = !st.configured;
+    $('#syncDisconnect').hidden = !st.on;
+    $('#syncRefresh').hidden = !st.on;
+    $('#syncConnect').hidden = st.on;
+    $('#syncMode').hidden = st.on;
+    $('#syncGen').hidden = st.on;
+
+    const codeInput = $('#syncCode');
+    if (st.on) { codeInput.value = st.code; codeInput.readOnly = true; }
+    else codeInput.readOnly = false;
+
+    let txt;
+    if (!st.configured) txt = 'Pegá los datos de tu proyecto de Supabase para empezar.';
+    else if (!st.on) txt = 'Sin conectar. Generá un código acá y pegá el mismo en el otro dispositivo.';
+    else if (st.busy) txt = 'Sincronizando…';
+    else if (st.error) txt = '⚠ ' + st.error;
+    else txt = `✓ Conectado · última sincronización ${agoLabel(st.last)}`;
+    $('#syncState').textContent = txt;
+    $('#syncState').classList.toggle('bad', !!st.error);
+  }
+
+  function openSync() { if (syncOverlay) { syncOverlay.hidden = false; renderSync(); } }
+  function closeSync() { if (syncOverlay) syncOverlay.hidden = true; }
+
+  // Si sync.js no cargó, la app sigue andando en modo local: escondemos el botón.
+  if (syncOverlay && !Sync()) syncBtn.hidden = true;
+
+  if (syncOverlay && Sync()) {
+    syncBtn.addEventListener('click', openSync);
+    $('#syncClose').addEventListener('click', closeSync);
+    syncOverlay.addEventListener('click', (e) => { if (e.target === syncOverlay) closeSync(); });
+
+    $('#syncSaveCfg').addEventListener('click', () => {
+      try {
+        Sync().setConfig($('#syncUrl').value, $('#syncKey').value);
+        toast('Proyecto guardado');
+        renderSync();
+      } catch (e) { toast(e.message); }
+    });
+
+    $('#syncGen').addEventListener('click', () => {
+      $('#syncCode').value = Sync().generateCode();
+      toast('Código nuevo — copialo al otro dispositivo');
+    });
+
+    $('#syncCopy').addEventListener('click', async () => {
+      const v = $('#syncCode').value.trim();
+      if (!v) return;
+      try { await navigator.clipboard.writeText(v); toast('Código copiado'); }
+      catch (e) { $('#syncCode').select(); toast('Copialo a mano'); }
+    });
+
+    $('#syncConnect').addEventListener('click', async () => {
+      const code = $('#syncCode').value;
+      const mode = $('#syncModeSel').value;
+      $('#syncState').textContent = 'Conectando…';
+      try {
+        await Sync().connect(code, mode);
+        toast('✓ Sincronización activada');
+      } catch (e) {
+        $('#syncState').textContent = '⚠ ' + e.message;
+        $('#syncState').classList.add('bad');
+      }
+    });
+
+    $('#syncRefresh').addEventListener('click', async () => {
+      await Sync().syncNow();
+      const st = Sync().status();
+      toast(st.error ? '⚠ ' + st.error : '✓ Al día');
+    });
+
+    $('#syncDisconnect').addEventListener('click', () => {
+      if (!confirm('¿Desconectar este dispositivo? Tus tareas quedan acá, pero dejan de sincronizarse.')) return;
+      Sync().disconnect();
+      toast('Desconectado');
+    });
+  }
+
   // ---------- Seed ----------
   function seed() {
     if (localStorage.getItem(STORE_KEY) || localStorage.getItem('pendientes.v1')) return;
     const today = new Date();
     const mk = (off, time, title, cat, priority, tags = [], subtasks = []) => {
       const d = new Date(today); d.setDate(d.getDate() + off);
-      return { id: uid(), title, cat, priority, tags, subtasks, date: ymd(d), time, done: false, remind: 60 };
+      return { id: uid(), title, cat, priority, tags, subtasks, date: ymd(d), time, done: false, remind: 60, u: Date.now() };
     };
     state.tasks = [
       mk(0, '18:00', 'Pedir turno médico', 'Salud', 3, ['salud'], [
@@ -839,10 +968,12 @@
       mk(0, null, 'Comprar regalo de mamá', 'General', 2, ['casa']),
       mk(1, '10:00', 'Llamar al dentista', 'Salud', 1, ['salud']),
       mk(3, null, 'Entregar informe mensual', 'Trabajo', 2, ['trabajo']),
-      { id: uid(), title: 'Pagar factura de luz', cat: 'Trámites', priority: 0, tags: [], subtasks: [], date: ymd(today), time: null, done: true, remind: 60 },
+      { id: uid(), title: 'Pagar factura de luz', cat: 'Trámites', priority: 0, tags: [], subtasks: [], date: ymd(today), time: null, done: true, remind: 60, u: Date.now() },
     ];
-    state.lists = [{ id: uid(), name: 'Supermercado', items: [
-      { id: uid(), text: 'Leche', done: false }, { id: uid(), text: 'Pan', done: false }, { id: uid(), text: 'Café', done: true },
+    state.lists = [{ id: uid(), name: 'Supermercado', u: Date.now(), items: [
+      { id: uid(), text: 'Leche', done: false, u: Date.now() },
+      { id: uid(), text: 'Pan', done: false, u: Date.now() },
+      { id: uid(), text: 'Café', done: true, u: Date.now() },
     ] }];
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
   }
@@ -854,6 +985,7 @@
   scheduleNative();
   syncWidget();
   pullWidgetChanges();
+  Sync()?.init({ getState: syncPayload, applyRemote, onStatus: renderSync });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

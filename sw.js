@@ -1,10 +1,12 @@
 /* Service Worker — cache offline para Tudu */
-const CACHE = 'tudu-v1';
+const CACHE = 'tudu-v2';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './js/app.js',
+  './js/sync.js',
+  './js/sync-config.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
