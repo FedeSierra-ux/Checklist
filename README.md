@@ -2,7 +2,8 @@
 
 App de tareas pendientes, minimalista y enfocada. Corre como **web (PWA)** y como
 **app Android (APK)** con notificaciones del sistema y widget en la pantalla de
-inicio. Todo se guarda en tu dispositivo — sin cuentas ni servidores.
+inicio. Todo se guarda en tu dispositivo — sin cuentas ni servidores; y si
+querés, se sincroniza con tus otros dispositivos con un código.
 
 ## Qué hace
 
@@ -17,7 +18,53 @@ inicio. Todo se guarda en tu dispositivo — sin cuentas ni servidores.
   entiende fecha, hora, prioridad y etiqueta solas.
 - **Listas de compras** con ítems tildables.
 - **Notificaciones** antes de cada vencimiento y resumen del día.
+- **Sincronización opcional** PC ⇆ celular con un código, sin crear cuentas.
 - **Tema claro/oscuro** automático.
+
+## Sincronizar la PC y el celular
+
+Por defecto cada dispositivo guarda lo suyo. Si querés cargar tareas en la PC y
+verlas en el celular, hay que activar la sincronización: un **código** compartido
+identifica tu espacio en [Supabase](https://supabase.com) (plan gratuito) y todos
+los dispositivos con ese código ven lo mismo. No hay cuentas ni login.
+
+**Preparar el proyecto (una sola vez, ~3 minutos)**
+
+1. Creá un proyecto gratis en [supabase.com](https://supabase.com).
+2. Abrí **SQL Editor**, pegá el contenido de [`supabase/schema.sql`](supabase/schema.sql)
+   y dale **Run**.
+3. Andá a **Settings → API Keys** y copiá el **Project URL** y la
+   **Publishable key** (`sb_publishable_…`; en proyectos viejos es la *anon
+   public*, un JWT que empieza con `eyJ…`). La **Secret key** no se usa nunca
+   acá: saltea RLS y da acceso total.
+4. Pegá esos dos valores en [`js/sync-config.js`](js/sync-config.js) y hacé
+   commit. (Alternativa sin tocar código: dejalos vacíos y cargalos desde el
+   panel ☁ de la app, en cada dispositivo.)
+
+**Conectar los dispositivos**
+
+1. En la PC: botón **☁** de la barra superior → **Generar código** → **Conectar**.
+2. Copiá ese código y pegalo en el mismo panel del celular → **Conectar**.
+3. Listo. Los cambios viajan solos: al guardar algo, al volver a la app y cada
+   ~25 segundos mientras la tenés abierta.
+
+Al conectar un dispositivo elegís qué hacer con lo que ya tenía: **combinar**
+(default), **traer lo de la nube** o **subir lo de acá**.
+
+**Cómo se resuelven los conflictos.** Cada tarea, lista e ítem lleva su marca de
+última modificación, y los borrados dejan una "tumba". Si editás la misma tarea
+en los dos lados gana la más reciente; si cada lado editó cosas distintas, se
+conservan las dos; y lo borrado en un dispositivo no revive desde el otro.
+
+**Sobre la seguridad.** La tabla queda con RLS activo y sin políticas: la clave
+pública no puede leer nada por sí sola. El único acceso son dos funciones que
+exigen el código, y el código generado tiene ~100 bits de azar. Aun así, **el
+código es la llave de tus tareas**: tratalo como una contraseña y no lo publiques.
+Los datos viajan sin cifrado extremo a extremo, así que quedan legibles en tu
+propio proyecto de Supabase.
+
+Si nunca activás la sincronización, la app sigue funcionando igual que antes:
+todo local, sin red.
 
 ## Dos formas de usarla
 
@@ -90,6 +137,9 @@ index.html              App (raíz = única fuente de verdad, sirve para la PWA)
 css/styles.css          Estilos (tema claro/oscuro, tipografía Manrope embebida)
 js/app.js               Lógica: tareas, prioridades, Hoy, subtareas, tags,
                         búsqueda, notificaciones y puente nativo
+js/sync.js              Sincronización entre dispositivos (merge + Supabase)
+js/sync-config.js       URL y clave del proyecto de Supabase (opcional)
+supabase/schema.sql     Tabla y funciones a correr en Supabase
 sw.js                   Service worker (cache offline de la PWA)
 manifest.webmanifest    Metadatos PWA
 icons/ · assets/fonts/  Íconos y tipografía
@@ -116,5 +166,10 @@ versiona.
 
 ## Privacidad
 
-Todos los datos viven en el dispositivo (`localStorage` en web /
-`SharedPreferences` en Android). Nada se envía a ningún servidor.
+Sin sincronización, todos los datos viven en el dispositivo (`localStorage` en
+web / `SharedPreferences` en Android) y no se envía nada a ningún servidor.
+
+Si activás la sincronización, tus tareas y listas se copian a **tu propio**
+proyecto de Supabase, bajo el código que elegiste. Los avisos ya mostrados
+(`notified`) nunca salen del dispositivo. Podés cortarlo cuando quieras con
+**Desconectar**: los datos quedan en el dispositivo y dejan de subirse.

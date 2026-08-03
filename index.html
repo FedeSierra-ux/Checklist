@@ -23,6 +23,9 @@
         <button class="icon-btn" id="searchBtn" title="Buscar" aria-label="Buscar">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         </button>
+        <button class="icon-btn" id="syncBtn" title="Sincronizar con otros dispositivos" aria-label="Sincronizar con otros dispositivos">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H7a5 5 0 0 1-.9-9.92A6 6 0 0 1 17.7 8.1 4.5 4.5 0 0 1 17.5 19Z"/><path d="M9.5 14.5 12 12l2.5 2.5"/><path d="M12 12v5"/></svg>
+        </button>
         <button class="icon-btn" id="notifBtn" title="Activar avisos" aria-label="Activar avisos">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         </button>
@@ -146,8 +149,71 @@
     </div>
   </div>
 
+  <!-- Sync sheet -->
+  <div class="sheet-overlay" id="syncOverlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+      <div class="sheet-grip"></div>
+      <h2 id="syncTitle">Sincronizar dispositivos</h2>
+      <p class="sync-state" id="syncState">—</p>
+
+      <div id="syncSetup" hidden>
+        <p class="sync-help">
+          Una sola vez: creá un proyecto gratis en <b>supabase.com</b>, corré el
+          archivo <code>supabase/schema.sql</code> del repo en el SQL Editor y
+          copiá acá los datos de <i>Settings → API Keys</i>.
+        </p>
+        <label class="field">
+          <span>URL del proyecto</span>
+          <input type="url" id="syncUrl" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Clave pública <small>(Publishable key — NO la Secret)</small></span>
+          <input type="text" id="syncKey" placeholder="sb_publishable_…" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="sheet-actions">
+          <button type="button" class="btn primary" id="syncSaveCfg">Guardar proyecto</button>
+        </div>
+      </div>
+
+      <div id="syncRoom" hidden>
+        <label class="field">
+          <span>Código de sincronización <small>(tratalo como una contraseña)</small></span>
+          <input type="text" id="syncCode" placeholder="tudu-xxxxx-xxxxx-xxxxx-xxxxx" autocomplete="off" spellcheck="false">
+        </label>
+
+        <label class="field" id="syncMode">
+          <span>Al conectar este dispositivo</span>
+          <select id="syncModeSel">
+            <option value="merge" selected>Combinar lo de acá con lo de la nube</option>
+            <option value="pull">Traer lo de la nube (descarta lo de acá)</option>
+            <option value="push">Subir lo de acá (pisa lo de la nube)</option>
+          </select>
+        </label>
+
+        <p class="sync-help">
+          Generá el código en un dispositivo y pegá <b>el mismo</b> en el otro.
+          Los cambios viajan solos cada pocos segundos y al abrir la app.
+        </p>
+
+        <div class="sync-actions">
+          <button type="button" class="btn ghost" id="syncGen">Generar código</button>
+          <button type="button" class="btn ghost" id="syncCopy">Copiar</button>
+          <button type="button" class="btn primary" id="syncConnect">Conectar</button>
+          <button type="button" class="btn ghost" id="syncRefresh" hidden>Sincronizar ahora</button>
+          <button type="button" class="btn ghost" id="syncDisconnect" hidden>Desconectar</button>
+        </div>
+      </div>
+
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" id="syncClose">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" hidden></div>
 
+  <script src="js/sync-config.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
