@@ -79,15 +79,17 @@
   async function rpc(fn, body) {
     const { url, key } = getConfig();
     if (!url || !key) throw new Error('Falta configurar Supabase.');
+    // `apikey` alcanza para entrar como rol anónimo. El Bearer sólo se manda
+    // con las claves viejas (JWT, empiezan con eyJ): las nuevas
+    // (sb_publishable_…) no son JWT y no tienen por qué pasar por ese parser.
+    const headers = { 'Content-Type': 'application/json', apikey: key };
+    if (key.startsWith('eyJ')) headers.Authorization = `Bearer ${key}`;
+
     let res;
     try {
       res = await fetch(`${url}/rest/v1/rpc/${fn}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-        },
+        headers,
         body: JSON.stringify(body),
       });
     } catch (e) {

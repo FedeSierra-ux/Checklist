@@ -41,6 +41,9 @@ los dispositivos con ese código ven lo mismo. No hay cuentas ni login.
    commit. (Alternativa sin tocar código: dejalos vacíos y cargalos desde el
    panel ☁ de la app, en cada dispositivo.)
 
+> En este repo los pasos 1-4 ya están hechos: `js/sync-config.js` viene con el
+> proyecto cargado, así que sólo hay que conectar los dispositivos.
+
 **Conectar los dispositivos**
 
 1. En la PC: botón **☁** de la barra superior → **Generar código** → **Conectar**.
