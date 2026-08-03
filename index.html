@@ -160,15 +160,15 @@
         <p class="sync-help">
           Una sola vez: creá un proyecto gratis en <b>supabase.com</b>, corré el
           archivo <code>supabase/schema.sql</code> del repo en el SQL Editor y
-          copiá acá los datos de <i>Project Settings → API</i>.
+          copiá acá los datos de <i>Settings → API Keys</i>.
         </p>
         <label class="field">
           <span>URL del proyecto</span>
           <input type="url" id="syncUrl" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false">
         </label>
         <label class="field">
-          <span>Clave pública <small>(anon public)</small></span>
-          <input type="text" id="syncKey" placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false">
+          <span>Clave pública <small>(Publishable key — NO la Secret)</small></span>
+          <input type="text" id="syncKey" placeholder="sb_publishable_…" autocomplete="off" spellcheck="false">
         </label>
         <div class="sheet-actions">
           <button type="button" class="btn primary" id="syncSaveCfg">Guardar proyecto</button>

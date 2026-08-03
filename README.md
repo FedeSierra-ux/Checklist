@@ -33,8 +33,10 @@ los dispositivos con ese código ven lo mismo. No hay cuentas ni login.
 1. Creá un proyecto gratis en [supabase.com](https://supabase.com).
 2. Abrí **SQL Editor**, pegá el contenido de [`supabase/schema.sql`](supabase/schema.sql)
    y dale **Run**.
-3. Andá a **Project Settings → API** y copiá **Project URL** y la clave
-   **anon public**.
+3. Andá a **Settings → API Keys** y copiá el **Project URL** y la
+   **Publishable key** (`sb_publishable_…`; en proyectos viejos es la *anon
+   public*, un JWT que empieza con `eyJ…`). La **Secret key** no se usa nunca
+   acá: saltea RLS y da acceso total.
 4. Pegá esos dos valores en [`js/sync-config.js`](js/sync-config.js) y hacé
    commit. (Alternativa sin tocar código: dejalos vacíos y cargalos desde el
    panel ☁ de la app, en cada dispositivo.)
