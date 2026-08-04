@@ -16,7 +16,7 @@
 
   // ---------- State ----------
   let state = load();
-  let view = 'hoy';
+  let view = 'semana';
   let calMonth = new Date(); calMonth.setDate(1);
   let selectedDay = null;
   let editingId = null;
@@ -128,7 +128,6 @@
     if (closeSwipe) closeSwipe();
     const flipFirst = reducedMotion() ? null : captureRects();
     if (query) renderSearch();
-    else if (view === 'hoy') renderHoy();
     else if (view === 'semana') renderSemana();
     else if (view === 'mes') renderMes();
     else if (view === 'notas') renderNotas();
@@ -155,7 +154,7 @@
   function updateTop() {
     const now = new Date();
     $('#topDay').textContent = `${DIAS[now.getDay()]} · ${now.getDate()} ${MESES[now.getMonth()].slice(0, 3)}`;
-    const titles = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', compras: 'Compras', notas: 'Notas' };
+    const titles = { semana: 'Esta semana', mes: 'Este mes', compras: 'Compras', notas: 'Notas' };
     $('#topTitle').textContent = query ? 'Buscar' : titles[view];
     $$('.navc-btn').forEach(b => {
       const on = b.dataset.view === view;
@@ -173,9 +172,8 @@
   function updateNavCounts() {
     const now = new Date(), todayStr = ymd(now);
     const pend = state.tasks.filter(t => !t.done);
-    const hoyN = pend.filter(t => t.date === todayStr || (taskDate(t) && taskDate(t) < now)).length;
-    setCnt('cntHoy', hoyN);
-    setCnt('cntSemana', pend.length);
+    // En el chip va lo urgente (hoy + vencido), que es el número que importa.
+    setCnt('cntSemana', pend.filter(t => t.date === todayStr || (taskDate(t) && taskDate(t) < now)).length);
     const comprasN = state.lists.reduce((n, l) => n + l.items.filter(i => !i.done).length, 0);
     setCnt('cntCompras', comprasN);
     setCnt('cntNotas', state.notes.length);
@@ -211,24 +209,13 @@
       </div>`;
   }
 
-  function sectionHTML(label, arr) {
+  // `kind`: 'due' pinta la marca en rojo; 'today' agranda el bloque de Hoy,
+  // que es lo primero que uno mira al abrir la app.
+  function sectionHTML(label, arr, kind = '') {
     if (!arr.length) return '';
-    const due = /vencid/i.test(label) ? ' due' : '';
-    return `<div class="sec${due}"><span class="lead">${label}</span><span class="count">${arr.length}</span></div>` + arr.map(rowHTML).join('');
-  }
-
-  function renderHoy() {
-    const now = new Date(), today = startOfDay(now);
-    const todayStr = ymd(now);
-    const pend = state.tasks.filter(t => !t.done);
-    const overdue = pend.filter(t => { const d = taskDate(t); return d && d < now && ymd(d) !== todayStr; }).sort(byPrioDate);
-    const hoy = pend.filter(t => t.date === todayStr).sort(byPrioDate);
-    const done = state.tasks.filter(t => t.done && t.date === todayStr);
-    updateProgress(done.length, hoy.length + done.length);
-    let html = sectionHTML('Vencidas', overdue) + sectionHTML('Hoy', hoy) + sectionHTML('Completadas hoy', done);
-    content.innerHTML = html || `<div class="empty">
-      <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      <b>Día despejado</b><p>No tenés nada para hoy ni vencido. Disfrutá.</p></div>`;
+    const cls = kind ? ` ${kind}` : (/vencid/i.test(label) ? ' due' : '');
+    return `<div class="sec${cls}"><span class="lead">${label}</span><span class="count">${arr.length}</span></div>`
+      + `<div class="secbody${kind === 'today' ? ' today' : ''}">${arr.map(rowHTML).join('')}</div>`;
   }
 
   function renderSemana() {
@@ -248,7 +235,16 @@
     });
     Object.values(b).forEach(a => a.sort(byPrioDate));
     updateProgress(b.hechas.length, state.tasks.length);
-    const html = sectionHTML('Vencidas', b.venc) + sectionHTML('Hoy', b.hoy) + sectionHTML('Mañana', b.man)
+    // Hoy va primero y destacado; lo vencido lo precede porque ya es tarde.
+    const hoyVacio = (!b.hoy.length && !b.venc.length)
+      ? `<div class="today-clear">
+           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L20 6"/></svg>
+           <span>Hoy no tenés nada pendiente</span>
+         </div>`
+      : '';
+    const html = sectionHTML('Vencidas', b.venc)
+      + sectionHTML('Hoy', b.hoy, 'today') + hoyVacio
+      + sectionHTML('Mañana', b.man)
       + sectionHTML('Próximas', b.sem) + sectionHTML('Sin fecha', b.sin) + sectionHTML('Completadas', b.hechas);
     content.innerHTML = html || emptyBox('Todo en orden', 'No tenés tareas pendientes. Tocá el + para agregar una.');
   }

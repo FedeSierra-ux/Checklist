@@ -7,8 +7,8 @@ querés, se sincroniza con tus otros dispositivos con un código.
 
 ## Qué hace
 
-- **Hoy · Semana · Mes · Compras · Notas** en una sola barra de navegación.
-- **Vista Hoy** — solo lo de hoy y lo vencido, sin ruido.
+- **Semana · Mes · Compras · Notas** en una sola barra de navegación.
+- **Hoy vive dentro de Semana**, como bloque destacado arriba de todo.
 - **Prioridades** en 4 niveles con color (alta / media / baja / ninguna); lo
   urgente sube arriba.
 - **Deadlines** con fecha y hora, ordenados por urgencia.
@@ -20,7 +20,7 @@ querés, se sincroniza con tus otros dispositivos con un código.
 - **Notas** de texto libre para ideas y apuntes, con fijado y búsqueda.
 - **Notificaciones** antes de cada vencimiento y resumen del día.
 - **Sincronización opcional** PC ⇆ celular con un código, sin crear cuentas.
-- **Tema claro/oscuro** automático.
+- **Tema claro/oscuro** automático, incluidos los controles nativos.
 
 ## Sincronizar la PC y el celular
 
