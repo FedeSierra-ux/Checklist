@@ -63,3 +63,44 @@ grant execute on function public.sync_push(text, jsonb) to anon, authenticated;
 
 -- Opcional: limpiar códigos que nadie usó en un año.
 -- delete from public.sync_rooms where updated_at < now() - interval '365 days';
+
+
+-- ============================================================
+--  Imágenes de las notas (Supabase Storage)
+-- ============================================================
+--
+-- Bucket público, pero con nombres de archivo aleatorios de 128 bits: la URL
+-- es imposible de adivinar. Los archivos se guardan bajo un prefijo derivado
+-- del código de sincronización (su hash), así cada espacio tiene su carpeta.
+--
+-- OJO — esto es distinto de la tabla de arriba: acá la clave publicable SÍ
+-- alcanza para subir y borrar. Si tu clave es pública (por ejemplo, está
+-- commiteada en un repo público), cualquiera que la lea puede llenar o vaciar
+-- el bucket. El límite de 5 MB por archivo y la lista de tipos permitidos
+-- acotan el daño, pero no lo eliminan.
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+     values ('notas', 'notas', true, 5242880,
+             array['image/jpeg','image/png','image/webp','image/gif'])
+on conflict (id) do update
+   set public             = true,
+       file_size_limit    = 5242880,
+       allowed_mime_types  = array['image/jpeg','image/png','image/webp','image/gif'];
+
+-- Las políticas se recrean para poder correr este archivo más de una vez.
+drop policy if exists "notas: leer"  on storage.objects;
+drop policy if exists "notas: subir" on storage.objects;
+drop policy if exists "notas: borrar" on storage.objects;
+
+create policy "notas: leer" on storage.objects
+  for select to anon, authenticated
+  using (bucket_id = 'notas');
+
+create policy "notas: subir" on storage.objects
+  for insert to anon, authenticated
+  with check (bucket_id = 'notas');
+
+-- Borrar es lo que permite recuperar espacio al eliminar una nota.
+create policy "notas: borrar" on storage.objects
+  for delete to anon, authenticated
+  using (bucket_id = 'notas');

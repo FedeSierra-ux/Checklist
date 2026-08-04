@@ -43,7 +43,7 @@
     s.lists = (s.lists || []).map(l => ({
       u: t0, ...l, items: (l.items || []).map(i => ({ u: t0, ...i })),
     }));
-    s.notes = (s.notes || []).map(n => ({ u: t0, pinned: false, ...n }));
+    s.notes = (s.notes || []).map(n => ({ u: t0, pinned: false, imgs: [], ...n }));
     s.notified = s.notified || {};
     s.trash = s.trash || {};   // id -> ms de borrado (tumbas, para no revivir)
     return s;
@@ -314,11 +314,18 @@
 
   function noteCardHTML(n) {
     const body = noteBody(n);
+    const imgs = n.imgs || [];
+    const tira = imgs.length
+      ? `<div class="note-imgs">${imgs.slice(0, 4).map((im, i) =>
+          `<img src="${esc(im.url)}" alt="" loading="lazy" data-act="note-zoom" data-i="${i}">`).join('')}
+         ${imgs.length > 4 ? `<span class="note-more">+${imgs.length - 4}</span>` : ''}</div>`
+      : '';
     return `<div class="note${n.pinned ? ' pinned' : ''}" data-note="${n.id}">
-        <div class="note-main" data-act="note-edit">
-          <div class="note-t">${esc(noteTitle(n))}</div>
-          ${body ? `<p class="note-b">${esc(body)}</p>` : ''}
-          <span class="note-when">${agoLabel(n.u)}</span>
+        <div class="note-main">
+          <div class="note-t" data-act="note-edit">${esc(noteTitle(n))}</div>
+          ${body ? `<p class="note-b" data-act="note-edit">${esc(body)}</p>` : ''}
+          ${tira}
+          <span class="note-when" data-act="note-edit">${agoLabel(n.u)}</span>
         </div>
         <div class="note-acts">
           <button class="note-pin ${n.pinned ? 'on' : ''}" data-act="note-pin" aria-label="${n.pinned ? 'Desfijar' : 'Fijar'}" title="${n.pinned ? 'Desfijar' : 'Fijar arriba'}">
@@ -341,9 +348,37 @@
     content.innerHTML = `<div class="notes">${[...state.notes].sort(byNote).map(noteCardHTML).join('')}</div>`;
   }
 
+  // --- Imágenes de las notas ---
+  // Se achican antes de subir: una foto de 12 MP pasa de ~4 MB a ~300 KB, y a
+  // 1600px se sigue viendo bien en cualquier pantalla.
+  const IMG_MAX = 1600, IMG_QUALITY = 0.8;
+
+  async function compressImage(file) {
+    const bmp = await createImageBitmap(file);
+    const escala = Math.min(1, IMG_MAX / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * escala), h = Math.round(bmp.height * escala);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', IMG_QUALITY));
+    // Si comprimir no ayudó (imágenes ya chicas), se sube la original.
+    return (blob && blob.size < file.size) ? blob : file;
+  }
+
   // --- Editor de notas (hoja aparte: una sola caja de texto) ---
   const noteOverlay = $('#noteOverlay');
   let editingNote = null;
+  let draftImgs = [];       // imágenes de la nota que se está editando
+  let imgsSubidas = [];     // subidas en ESTA sesión de edición (para limpiar si cancela)
+
+  function renderDraftImgs() {
+    const box = $('#noteImgs');
+    box.innerHTML = draftImgs.map((im, i) =>
+      `<div class="thumb"><img src="${esc(im.url)}" alt="" loading="lazy">
+         <button type="button" data-i="${i}" aria-label="Quitar imagen">&times;</button></div>`).join('');
+    box.hidden = !draftImgs.length;
+  }
 
   function openNote(id = null) {
     editingNote = id;
@@ -351,24 +386,76 @@
     $('#noteTitle').textContent = n ? 'Editar nota' : 'Nueva nota';
     $('#noteText').value = n ? n.text : '';
     $('#noteDelete').hidden = !id;
+    draftImgs = n ? (n.imgs || []).map(im => ({ ...im })) : [];
+    imgsSubidas = [];
+    renderDraftImgs();
+    // Adjuntar necesita el bucket, que vive del lado de la sincronización.
+    const conSync = !!Sync()?.isOn();
+    $('#noteAddImg').disabled = !conSync;
+    $('#noteImgHint').textContent = conSync ? '' : 'Activá la sincronización (☁) para adjuntar imágenes.';
     noteOverlay.hidden = false;
     setTimeout(() => $('#noteText').focus(), 250);
   }
-  function closeNote() { noteOverlay.hidden = true; editingNote = null; }
+
+  async function closeNote(descartando = false) {
+    noteOverlay.hidden = true;
+    // Al cancelar, lo que se subió recién no queda ocupando lugar.
+    if (descartando && imgsSubidas.length) {
+      const paths = imgsSubidas.slice();
+      imgsSubidas = [];
+      paths.forEach(p => Sync()?.deleteImage(p));
+    }
+    editingNote = null; draftImgs = []; imgsSubidas = [];
+  }
+
+  async function pickImages(files) {
+    if (!files || !files.length) return;
+    const btn = $('#noteAddImg');
+    btn.disabled = true;
+    const hint = $('#noteImgHint');
+    let n = 0;
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      n++;
+      hint.textContent = `Subiendo ${n} de ${files.length}…`;
+      try {
+        const blob = await compressImage(file);
+        const up = await Sync().uploadImage(blob);
+        draftImgs.push({ id: uid(), path: up.path, url: up.url });
+        imgsSubidas.push(up.path);
+        renderDraftImgs();
+      } catch (e) {
+        hint.textContent = '⚠ ' + e.message;
+        btn.disabled = false;
+        return;
+      }
+    }
+    hint.textContent = '';
+    btn.disabled = false;
+  }
 
   function saveNote() {
     const text = $('#noteText').value.trim();
-    if (!text) {                       // vaciar una nota existente = borrarla
+    if (!text && !draftImgs.length) {   // vaciar una nota existente = borrarla
       if (editingNote) { delNote(editingNote, true); return; }
-      closeNote(); return;
+      closeNote(true); return;
     }
+    // Las imágenes que se sacaron de la nota se borran del servidor.
+    const previas = editingNote
+      ? ((state.notes.find(x => x.id === editingNote) || {}).imgs || []) : [];
+    previas.filter(p => !draftImgs.some(d => d.path === p.path))
+      .forEach(p => Sync()?.deleteImage(p.path));
+
     if (editingNote) {
       const n = state.notes.find(x => x.id === editingNote);
-      if (n) { n.text = text; touch(n); }
+      if (n) { n.text = text; n.imgs = draftImgs.map(im => ({ ...im })); touch(n); }
     } else {
-      state.notes.unshift({ id: uid(), text, pinned: false, u: Date.now() });
+      state.notes.unshift({
+        id: uid(), text, imgs: draftImgs.map(im => ({ ...im })), pinned: false, u: Date.now(),
+      });
     }
     const era = editingNote;
+    imgsSubidas = [];                   // ya son parte de la nota, no se limpian
     closeNote(); save(); render();
     toast(era ? 'Nota actualizada' : 'Nota guardada');
   }
@@ -376,9 +463,10 @@
   function delNote(id, silent = false) {
     const n = state.notes.find(x => x.id === id);
     if (!silent && n && !confirm(`¿Eliminar "${noteTitle(n)}"?`)) return;
+    (n?.imgs || []).forEach(im => Sync()?.deleteImage(im.path));  // libera espacio
     state.notes = state.notes.filter(x => x.id !== id);
     tomb(id);
-    if (editingNote === id) closeNote();
+    if (editingNote === id) { imgsSubidas = []; closeNote(); }
     save(); render(); toast('Nota eliminada');
   }
 
@@ -388,11 +476,36 @@
     save(); render(); toast(n.pinned ? '📌 Fijada arriba' : 'Desfijada');
   }
 
+  // Visor a pantalla completa al tocar una miniatura.
+  function zoomImage(src) {
+    const v = $('#imgViewer');
+    $('#imgViewerImg').src = src;
+    v.hidden = false;
+  }
+  if ($('#imgViewer')) {
+    $('#imgViewer').addEventListener('click', () => {
+      $('#imgViewer').hidden = true; $('#imgViewerImg').src = '';
+    });
+  }
+
   if (noteOverlay) {
-    $('#noteCancel').addEventListener('click', closeNote);
+    $('#noteCancel').addEventListener('click', () => closeNote(true));
     $('#noteSave').addEventListener('click', saveNote);
     $('#noteDelete').addEventListener('click', () => { if (editingNote) delNote(editingNote); });
-    noteOverlay.addEventListener('click', (e) => { if (e.target === noteOverlay) closeNote(); });
+    noteOverlay.addEventListener('click', (e) => { if (e.target === noteOverlay) closeNote(true); });
+
+    $('#noteAddImg').addEventListener('click', () => $('#noteFile').click());
+    $('#noteFile').addEventListener('change', async (e) => {
+      await pickImages([...e.target.files]);
+      e.target.value = '';            // permite volver a elegir el mismo archivo
+    });
+    // Quitar una imagen del borrador (se borra del servidor recién al guardar).
+    $('#noteImgs').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-i]');
+      if (b) { draftImgs.splice(+b.dataset.i, 1); renderDraftImgs(); return; }
+      const img = e.target.closest('img');
+      if (img) zoomImage(img.src);
+    });
     // Ctrl/Cmd+Enter guarda sin sacar las manos del teclado.
     $('#noteText').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveNote(); }
@@ -458,6 +571,7 @@
     const noteEl = actEl.closest('.note[data-note]');
     if (noteEl) {
       const nid = noteEl.dataset.note;
+      if (act === 'note-zoom') { zoomImage(actEl.src); return; }
       if (act === 'note-edit') openNote(nid);
       else if (act === 'note-del') delNote(nid);
       else if (act === 'note-pin') pinNote(nid);

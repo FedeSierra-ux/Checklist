@@ -17,7 +17,8 @@ querés, se sincroniza con tus otros dispositivos con un código.
 - **Escritura natural**: escribís *"mañana 15:00 pedir turno #salud !alta"* y
   entiende fecha, hora, prioridad y etiqueta solas.
 - **Listas de compras** con ítems tildables.
-- **Notas** de texto libre para ideas y apuntes, con fijado y búsqueda.
+- **Notas** de texto libre para ideas y apuntes, con fijado, búsqueda e
+  **imágenes adjuntas** (se achican solas antes de subir).
 - **Notificaciones** antes de cada vencimiento y resumen del día.
 - **Sincronización opcional** PC ⇆ celular con un código, sin crear cuentas.
 - **Tema claro/oscuro** automático, incluidos los controles nativos.
@@ -59,6 +60,26 @@ Al conectar un dispositivo elegís qué hacer con lo que ya tenía: **combinar**
 última modificación, y los borrados dejan una "tumba". Si editás la misma tarea
 en los dos lados gana la más reciente; si cada lado editó cosas distintas, se
 conservan las dos; y lo borrado en un dispositivo no revive desde el otro.
+
+### Imágenes en las notas
+
+Las imágenes van a **Supabase Storage**, no adentro del JSON: la nota guarda
+sólo la URL (unos 100 bytes), así la sincronización no reenvía las fotos en
+cada cambio. Antes de subir se redimensionan a 1600 px y se pasan a JPEG al
+80%: en la prueba automatizada, una captura de 2400×1600 baja de 3,4 MB a
+20 KB. Una foto de celular de 12 MP queda en 200-400 KB.
+
+Con el gigabyte del plan gratuito entran miles de imágenes. Al borrar una nota
+(o sacarle una imagen) el archivo se borra del servidor y el espacio vuelve.
+Adjuntar requiere tener la sincronización activada.
+
+**El bucket es el punto débil del modelo.** A diferencia de la tabla, acá la
+clave publicable alcanza para subir y borrar: quien la lea puede llenar o
+vaciar el bucket. El límite de 5 MB por archivo y la lista de tipos permitidos
+acotan el daño, pero si te importa, no dejes la clave en un repo público.
+Las URLs, en cambio, llevan un nombre aleatorio de 128 bits bajo una carpeta
+derivada del hash del código: son públicas pero nadie las adivina, y el código
+nunca viaja en la URL.
 
 **Sobre la seguridad.** La tabla queda con RLS activo y sin políticas: la clave
 pública no puede leer nada por sí sola. El único acceso son dos funciones que
