@@ -15,6 +15,6 @@
  * sincronización (☁ en la barra superior) y los guarda en ese dispositivo.
  */
 window.TUDU_SYNC_CONFIG = {
-  url: '',
-  anonKey: '',
+  url: 'https://pohjgcoqjrncfxujdcsj.supabase.co',
+  anonKey: 'sb_publishable_HC25Q51UU-Iy1dvO8rGZfQ_QcjgcNCi',
 };

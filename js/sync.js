@@ -79,15 +79,17 @@
   async function rpc(fn, body) {
     const { url, key } = getConfig();
     if (!url || !key) throw new Error('Falta configurar Supabase.');
+    // `apikey` alcanza para entrar como rol anónimo. El Bearer sólo se manda
+    // con las claves viejas (JWT, empiezan con eyJ): las nuevas
+    // (sb_publishable_…) no son JWT y no tienen por qué pasar por ese parser.
+    const headers = { 'Content-Type': 'application/json', apikey: key };
+    if (key.startsWith('eyJ')) headers.Authorization = `Bearer ${key}`;
+
     let res;
     try {
       res = await fetch(`${url}/rest/v1/rpc/${fn}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-        },
+        headers,
         body: JSON.stringify(body),
       });
     } catch (e) {
@@ -109,6 +111,61 @@
   }
   async function remotePut(code, payload) {
     await rpc('sync_push', { p_code: normalizeCode(code), p_data: payload });
+  }
+
+  // ---------- Imágenes (Supabase Storage) ----------
+  const BUCKET = 'notas';
+
+  // Carpeta por espacio: el hash del código, no el código en claro (que
+  // terminaría en una URL pública y es la llave de todos tus datos).
+  async function codeFolder() {
+    const data = new TextEncoder().encode('tudu:' + getCode());
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return [...new Uint8Array(hash)].slice(0, 12)
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  // 128 bits de azar: la URL es pública pero nadie la adivina.
+  function randomName() {
+    const n = new Uint8Array(16);
+    crypto.getRandomValues(n);
+    return [...n].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function uploadImage(blob) {
+    if (!isOn()) throw new Error('Activá la sincronización para adjuntar imágenes.');
+    const { url, key } = getConfig();
+    const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    const path = `${await codeFolder()}/${randomName()}.${ext}`;
+    const headers = { apikey: key, 'Content-Type': blob.type };
+    if (key.startsWith('eyJ')) headers.Authorization = `Bearer ${key}`;
+
+    let res;
+    try {
+      res = await fetch(`${url}/storage/v1/object/${BUCKET}/${path}`,
+        { method: 'POST', headers, body: blob });
+    } catch (e) { throw new Error('Sin conexión: no se pudo subir la imagen.'); }
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      if (res.status === 404) throw new Error('Falta crear el bucket "notas" (corré supabase/schema.sql).');
+      if (res.status === 403 || res.status === 401) throw new Error('El bucket "notas" no permite subir con esta clave.');
+      if (res.status === 413) throw new Error('La imagen es demasiado grande.');
+      throw new Error(txt.slice(0, 120) || `Error ${res.status} al subir`);
+    }
+    return { path, url: `${url}/storage/v1/object/public/${BUCKET}/${path}` };
+  }
+
+  // Best-effort: si falla, la imagen queda huérfana pero la app sigue andando.
+  async function deleteImage(path) {
+    if (!path || !hasConfig()) return false;
+    const { url, key } = getConfig();
+    const headers = { apikey: key };
+    if (key.startsWith('eyJ')) headers.Authorization = `Bearer ${key}`;
+    try {
+      const res = await fetch(`${url}/storage/v1/object/${BUCKET}/${path}`,
+        { method: 'DELETE', headers });
+      return res.ok;
+    } catch (e) { return false; }
   }
 
   // ---------- Merge ----------
@@ -156,6 +213,7 @@
     return {
       tasks: mergeItems(local.tasks, remote.tasks, trash),
       lists: mergeLists(local.lists, remote.lists, trash),
+      notes: mergeItems(local.notes, remote.notes, trash),
       trash,
     };
   }
@@ -166,6 +224,7 @@
     return JSON.stringify({
       tasks: sortById(p.tasks).map(t => ({ ...t, subtasks: sortById(t.subtasks) })),
       lists: sortById(p.lists).map(l => ({ ...l, items: sortById(l.items) })),
+      notes: sortById(p.notes),
       trash: Object.fromEntries(Object.entries(p.trash || {}).sort()),
     });
   }
@@ -266,6 +325,7 @@
 
   window.TuduSync = {
     init, status, syncNow, connect, disconnect, schedulePush,
+    uploadImage, deleteImage,
     getConfig, setConfig, hasConfig, configIsFromFile,
     getCode, generateCode, normalizeCode, validCode, isOn,
     // exportados para pruebas

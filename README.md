@@ -7,8 +7,8 @@ querés, se sincroniza con tus otros dispositivos con un código.
 
 ## Qué hace
 
-- **Hoy · Semana · Mes · Compras** en una sola barra de navegación.
-- **Vista Hoy** — solo lo de hoy y lo vencido, sin ruido.
+- **Semana · Mes · Compras · Notas** en una sola barra de navegación.
+- **Hoy vive dentro de Semana**, como bloque destacado arriba de todo.
 - **Prioridades** en 4 niveles con color (alta / media / baja / ninguna); lo
   urgente sube arriba.
 - **Deadlines** con fecha y hora, ordenados por urgencia.
@@ -17,9 +17,11 @@ querés, se sincroniza con tus otros dispositivos con un código.
 - **Escritura natural**: escribís *"mañana 15:00 pedir turno #salud !alta"* y
   entiende fecha, hora, prioridad y etiqueta solas.
 - **Listas de compras** con ítems tildables.
+- **Notas** de texto libre para ideas y apuntes, con fijado, búsqueda e
+  **imágenes adjuntas** (se achican solas antes de subir).
 - **Notificaciones** antes de cada vencimiento y resumen del día.
 - **Sincronización opcional** PC ⇆ celular con un código, sin crear cuentas.
-- **Tema claro/oscuro** automático.
+- **Tema claro/oscuro** automático, incluidos los controles nativos.
 
 ## Sincronizar la PC y el celular
 
@@ -41,6 +43,9 @@ los dispositivos con ese código ven lo mismo. No hay cuentas ni login.
    commit. (Alternativa sin tocar código: dejalos vacíos y cargalos desde el
    panel ☁ de la app, en cada dispositivo.)
 
+> En este repo los pasos 1-4 ya están hechos: `js/sync-config.js` viene con el
+> proyecto cargado, así que sólo hay que conectar los dispositivos.
+
 **Conectar los dispositivos**
 
 1. En la PC: botón **☁** de la barra superior → **Generar código** → **Conectar**.
@@ -55,6 +60,26 @@ Al conectar un dispositivo elegís qué hacer con lo que ya tenía: **combinar**
 última modificación, y los borrados dejan una "tumba". Si editás la misma tarea
 en los dos lados gana la más reciente; si cada lado editó cosas distintas, se
 conservan las dos; y lo borrado en un dispositivo no revive desde el otro.
+
+### Imágenes en las notas
+
+Las imágenes van a **Supabase Storage**, no adentro del JSON: la nota guarda
+sólo la URL (unos 100 bytes), así la sincronización no reenvía las fotos en
+cada cambio. Antes de subir se redimensionan a 1600 px y se pasan a JPEG al
+80%: en la prueba automatizada, una captura de 2400×1600 baja de 3,4 MB a
+20 KB. Una foto de celular de 12 MP queda en 200-400 KB.
+
+Con el gigabyte del plan gratuito entran miles de imágenes. Al borrar una nota
+(o sacarle una imagen) el archivo se borra del servidor y el espacio vuelve.
+Adjuntar requiere tener la sincronización activada.
+
+**El bucket es el punto débil del modelo.** A diferencia de la tabla, acá la
+clave publicable alcanza para subir y borrar: quien la lea puede llenar o
+vaciar el bucket. El límite de 5 MB por archivo y la lista de tipos permitidos
+acotan el daño, pero si te importa, no dejes la clave en un repo público.
+Las URLs, en cambio, llevan un nombre aleatorio de 128 bits bajo una carpeta
+derivada del hash del código: son públicas pero nadie las adivina, y el código
+nunca viaja en la URL.
 
 **Sobre la seguridad.** La tabla queda con RLS activo y sin políticas: la clave
 pública no puede leer nada por sí sola. El único acceso son dos funciones que
@@ -136,7 +161,7 @@ o con el teléfono conectado: `adb install app-debug.apk`.
 index.html              App (raíz = única fuente de verdad, sirve para la PWA)
 css/styles.css          Estilos (tema claro/oscuro, tipografía Manrope embebida)
 js/app.js               Lógica: tareas, prioridades, Hoy, subtareas, tags,
-                        búsqueda, notificaciones y puente nativo
+                        notas, búsqueda, notificaciones y puente nativo
 js/sync.js              Sincronización entre dispositivos (merge + Supabase)
 js/sync-config.js       URL y clave del proyecto de Supabase (opcional)
 supabase/schema.sql     Tabla y funciones a correr en Supabase

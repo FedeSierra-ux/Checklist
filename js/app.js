@@ -16,7 +16,7 @@
 
   // ---------- State ----------
   let state = load();
-  let view = 'hoy';
+  let view = 'semana';
   let calMonth = new Date(); calMonth.setDate(1);
   let selectedDay = null;
   let editingId = null;
@@ -31,7 +31,7 @@
       const old = localStorage.getItem('pendientes.v1');
       if (old) return migrate(JSON.parse(old));
     } catch (e) { /* ignore */ }
-    return { tasks: [], lists: [], notified: {}, trash: {} };
+    return { tasks: [], lists: [], notes: [], notified: {}, trash: {} };
   }
   function migrate(s) {
     // `u` = última modificación (ms). La usa la sincronización para decidir
@@ -43,6 +43,7 @@
     s.lists = (s.lists || []).map(l => ({
       u: t0, ...l, items: (l.items || []).map(i => ({ u: t0, ...i })),
     }));
+    s.notes = (s.notes || []).map(n => ({ u: t0, pinned: false, imgs: [], ...n }));
     s.notified = s.notified || {};
     s.trash = s.trash || {};   // id -> ms de borrado (tumbas, para no revivir)
     return s;
@@ -127,9 +128,9 @@
     if (closeSwipe) closeSwipe();
     const flipFirst = reducedMotion() ? null : captureRects();
     if (query) renderSearch();
-    else if (view === 'hoy') renderHoy();
     else if (view === 'semana') renderSemana();
     else if (view === 'mes') renderMes();
+    else if (view === 'notas') renderNotas();
     else renderCompras();
     if (flipFirst) flipPlay(flipFirst);
     checkWebReminders();
@@ -153,13 +154,13 @@
   function updateTop() {
     const now = new Date();
     $('#topDay').textContent = `${DIAS[now.getDay()]} · ${now.getDate()} ${MESES[now.getMonth()].slice(0, 3)}`;
-    const titles = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', compras: 'Compras' };
+    const titles = { semana: 'Esta semana', mes: 'Este mes', compras: 'Compras', notas: 'Notas' };
     $('#topTitle').textContent = query ? 'Buscar' : titles[view];
     $$('.navc-btn').forEach(b => {
       const on = b.dataset.view === view;
       b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
     });
-    $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || !!query);
+    $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || view === 'notas' || !!query);
     $('#fab').style.display = (view === 'mes' && !query) ? 'none' : 'flex';
     updateNavCounts();
   }
@@ -171,11 +172,11 @@
   function updateNavCounts() {
     const now = new Date(), todayStr = ymd(now);
     const pend = state.tasks.filter(t => !t.done);
-    const hoyN = pend.filter(t => t.date === todayStr || (taskDate(t) && taskDate(t) < now)).length;
-    setCnt('cntHoy', hoyN);
-    setCnt('cntSemana', pend.length);
+    // En el chip va lo urgente (hoy + vencido), que es el número que importa.
+    setCnt('cntSemana', pend.filter(t => t.date === todayStr || (taskDate(t) && taskDate(t) < now)).length);
     const comprasN = state.lists.reduce((n, l) => n + l.items.filter(i => !i.done).length, 0);
     setCnt('cntCompras', comprasN);
+    setCnt('cntNotas', state.notes.length);
   }
 
   const byPrioDate = (a, b) => (b.priority || 0) - (a.priority || 0) || ((taskDate(a) || Infinity) - (taskDate(b) || Infinity));
@@ -208,24 +209,13 @@
       </div>`;
   }
 
-  function sectionHTML(label, arr) {
+  // `kind`: 'due' pinta la marca en rojo; 'today' agranda el bloque de Hoy,
+  // que es lo primero que uno mira al abrir la app.
+  function sectionHTML(label, arr, kind = '') {
     if (!arr.length) return '';
-    const due = /vencid/i.test(label) ? ' due' : '';
-    return `<div class="sec${due}"><span class="lead">${label}</span><span class="count">${arr.length}</span></div>` + arr.map(rowHTML).join('');
-  }
-
-  function renderHoy() {
-    const now = new Date(), today = startOfDay(now);
-    const todayStr = ymd(now);
-    const pend = state.tasks.filter(t => !t.done);
-    const overdue = pend.filter(t => { const d = taskDate(t); return d && d < now && ymd(d) !== todayStr; }).sort(byPrioDate);
-    const hoy = pend.filter(t => t.date === todayStr).sort(byPrioDate);
-    const done = state.tasks.filter(t => t.done && t.date === todayStr);
-    updateProgress(done.length, hoy.length + done.length);
-    let html = sectionHTML('Vencidas', overdue) + sectionHTML('Hoy', hoy) + sectionHTML('Completadas hoy', done);
-    content.innerHTML = html || `<div class="empty">
-      <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      <b>Día despejado</b><p>No tenés nada para hoy ni vencido. Disfrutá.</p></div>`;
+    const cls = kind ? ` ${kind}` : (/vencid/i.test(label) ? ' due' : '');
+    return `<div class="sec${cls}"><span class="lead">${label}</span><span class="count">${arr.length}</span></div>`
+      + `<div class="secbody${kind === 'today' ? ' today' : ''}">${arr.map(rowHTML).join('')}</div>`;
   }
 
   function renderSemana() {
@@ -245,7 +235,16 @@
     });
     Object.values(b).forEach(a => a.sort(byPrioDate));
     updateProgress(b.hechas.length, state.tasks.length);
-    const html = sectionHTML('Vencidas', b.venc) + sectionHTML('Hoy', b.hoy) + sectionHTML('Mañana', b.man)
+    // Hoy va primero y destacado; lo vencido lo precede porque ya es tarde.
+    const hoyVacio = (!b.hoy.length && !b.venc.length)
+      ? `<div class="today-clear">
+           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L20 6"/></svg>
+           <span>Hoy no tenés nada pendiente</span>
+         </div>`
+      : '';
+    const html = sectionHTML('Vencidas', b.venc)
+      + sectionHTML('Hoy', b.hoy, 'today') + hoyVacio
+      + sectionHTML('Mañana', b.man)
       + sectionHTML('Próximas', b.sem) + sectionHTML('Sin fecha', b.sin) + sectionHTML('Completadas', b.hechas);
     content.innerHTML = html || emptyBox('Todo en orden', 'No tenés tareas pendientes. Tocá el + para agregar una.');
   }
@@ -303,6 +302,217 @@
     }).join('');
   }
 
+  // ---------- Notas ----------
+  // Texto libre, sin campos ni obligaciones: la primera línea hace de título.
+  const noteTitle = (n) => (n.text || '').split('\n')[0].trim() || 'Nota sin título';
+  // Los renglones se separan con "·" para que una lista no se lea como una
+  // frase corrida al colapsarla en el preview.
+  const noteBody = (n) => (n.text || '').split('\n').slice(1)
+    .map(l => l.trim()).filter(Boolean).join(' · ');
+  // Fijadas arriba; después, la editada más recién primero.
+  const byNote = (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.u || 0) - (a.u || 0);
+
+  function noteCardHTML(n) {
+    const body = noteBody(n);
+    const imgs = n.imgs || [];
+    const tira = imgs.length
+      ? `<div class="note-imgs${imgs.length === 1 ? ' solo' : ''}">${imgs.slice(0, 4).map((im, i) =>
+          `<img src="${esc(im.url)}" alt="" loading="lazy" data-act="note-zoom" data-i="${i}">`).join('')}
+         ${imgs.length > 4 ? `<span class="note-more">+${imgs.length - 4}</span>` : ''}</div>`
+      : '';
+    return `<div class="note${n.pinned ? ' pinned' : ''}" data-note="${n.id}">
+        <div class="note-main">
+          <div class="note-t" data-act="note-edit">${esc(noteTitle(n))}</div>
+          ${body ? `<p class="note-b" data-act="note-edit">${esc(body)}</p>` : ''}
+          ${tira}
+          <span class="note-when" data-act="note-edit">${agoLabel(n.u)}</span>
+        </div>
+        <div class="note-acts">
+          <button class="note-pin ${n.pinned ? 'on' : ''}" data-act="note-pin" aria-label="${n.pinned ? 'Desfijar' : 'Fijar'}" title="${n.pinned ? 'Desfijar' : 'Fijar arriba'}">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="${n.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 2h6l-1 6 3 3v2H7v-2l3-3-1-6Z"/></svg>
+          </button>
+          <button class="note-del" data-act="note-del" aria-label="Eliminar nota">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          </button>
+        </div>
+      </div>`;
+  }
+
+  function renderNotas() {
+    if (!state.notes.length) {
+      content.innerHTML = `<div class="empty">
+        <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+        <b>Sin notas</b><p>Un lugar libre para ideas, links o lo que sea. Tocá el + para escribir.</p></div>`;
+      return;
+    }
+    content.innerHTML = `<div class="notes">${[...state.notes].sort(byNote).map(noteCardHTML).join('')}</div>`;
+  }
+
+  // --- Imágenes de las notas ---
+  // Se achican antes de subir: una foto de 12 MP pasa de ~4 MB a ~300 KB, y a
+  // 1600px se sigue viendo bien en cualquier pantalla.
+  const IMG_MAX = 1600, IMG_QUALITY = 0.8;
+
+  async function compressImage(file) {
+    const bmp = await createImageBitmap(file);
+    const escala = Math.min(1, IMG_MAX / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * escala), h = Math.round(bmp.height * escala);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', IMG_QUALITY));
+    // Si comprimir no ayudó (imágenes ya chicas), se sube la original.
+    return (blob && blob.size < file.size) ? blob : file;
+  }
+
+  // --- Editor de notas (hoja aparte: una sola caja de texto) ---
+  const noteOverlay = $('#noteOverlay');
+  let editingNote = null;
+  let draftImgs = [];       // imágenes de la nota que se está editando
+  let imgsSubidas = [];     // subidas en ESTA sesión de edición (para limpiar si cancela)
+
+  function renderDraftImgs() {
+    const box = $('#noteImgs');
+    box.classList.toggle('solo', draftImgs.length === 1);
+    box.innerHTML = draftImgs.map((im, i) =>
+      `<div class="thumb"><img src="${esc(im.url)}" alt="" loading="lazy">
+         <button type="button" data-i="${i}" aria-label="Quitar imagen">&times;</button></div>`).join('');
+    box.hidden = !draftImgs.length;
+  }
+
+  function openNote(id = null) {
+    editingNote = id;
+    const n = id ? state.notes.find(x => x.id === id) : null;
+    $('#noteTitle').textContent = n ? 'Editar nota' : 'Nueva nota';
+    $('#noteText').value = n ? n.text : '';
+    $('#noteDelete').hidden = !id;
+    draftImgs = n ? (n.imgs || []).map(im => ({ ...im })) : [];
+    imgsSubidas = [];
+    renderDraftImgs();
+    // Adjuntar necesita el bucket, que vive del lado de la sincronización.
+    const conSync = !!Sync()?.isOn();
+    $('#noteAddImg').disabled = !conSync;
+    $('#noteImgHint').textContent = conSync ? '' : 'Activá la sincronización (☁) para adjuntar imágenes.';
+    noteOverlay.hidden = false;
+    setTimeout(() => $('#noteText').focus(), 250);
+  }
+
+  async function closeNote(descartando = false) {
+    noteOverlay.hidden = true;
+    // Al cancelar, lo que se subió recién no queda ocupando lugar.
+    if (descartando && imgsSubidas.length) {
+      const paths = imgsSubidas.slice();
+      imgsSubidas = [];
+      paths.forEach(p => Sync()?.deleteImage(p));
+    }
+    editingNote = null; draftImgs = []; imgsSubidas = [];
+  }
+
+  async function pickImages(files) {
+    if (!files || !files.length) return;
+    const btn = $('#noteAddImg');
+    btn.disabled = true;
+    const hint = $('#noteImgHint');
+    let n = 0;
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      n++;
+      hint.textContent = `Subiendo ${n} de ${files.length}…`;
+      try {
+        const blob = await compressImage(file);
+        const up = await Sync().uploadImage(blob);
+        draftImgs.push({ id: uid(), path: up.path, url: up.url });
+        imgsSubidas.push(up.path);
+        renderDraftImgs();
+      } catch (e) {
+        hint.textContent = '⚠ ' + e.message;
+        btn.disabled = false;
+        return;
+      }
+    }
+    hint.textContent = '';
+    btn.disabled = false;
+  }
+
+  function saveNote() {
+    const text = $('#noteText').value.trim();
+    if (!text && !draftImgs.length) {   // vaciar una nota existente = borrarla
+      if (editingNote) { delNote(editingNote, true); return; }
+      closeNote(true); return;
+    }
+    // Las imágenes que se sacaron de la nota se borran del servidor.
+    const previas = editingNote
+      ? ((state.notes.find(x => x.id === editingNote) || {}).imgs || []) : [];
+    previas.filter(p => !draftImgs.some(d => d.path === p.path))
+      .forEach(p => Sync()?.deleteImage(p.path));
+
+    if (editingNote) {
+      const n = state.notes.find(x => x.id === editingNote);
+      if (n) { n.text = text; n.imgs = draftImgs.map(im => ({ ...im })); touch(n); }
+    } else {
+      state.notes.unshift({
+        id: uid(), text, imgs: draftImgs.map(im => ({ ...im })), pinned: false, u: Date.now(),
+      });
+    }
+    const era = editingNote;
+    imgsSubidas = [];                   // ya son parte de la nota, no se limpian
+    closeNote(); save(); render();
+    toast(era ? 'Nota actualizada' : 'Nota guardada');
+  }
+
+  function delNote(id, silent = false) {
+    const n = state.notes.find(x => x.id === id);
+    if (!silent && n && !confirm(`¿Eliminar "${noteTitle(n)}"?`)) return;
+    (n?.imgs || []).forEach(im => Sync()?.deleteImage(im.path));  // libera espacio
+    state.notes = state.notes.filter(x => x.id !== id);
+    tomb(id);
+    if (editingNote === id) { imgsSubidas = []; closeNote(); }
+    save(); render(); toast('Nota eliminada');
+  }
+
+  function pinNote(id) {
+    const n = state.notes.find(x => x.id === id); if (!n) return;
+    n.pinned = !n.pinned; touch(n); haptic();
+    save(); render(); toast(n.pinned ? '📌 Fijada arriba' : 'Desfijada');
+  }
+
+  // Visor a pantalla completa al tocar una miniatura.
+  function zoomImage(src) {
+    const v = $('#imgViewer');
+    $('#imgViewerImg').src = src;
+    v.hidden = false;
+  }
+  if ($('#imgViewer')) {
+    $('#imgViewer').addEventListener('click', () => {
+      $('#imgViewer').hidden = true; $('#imgViewerImg').src = '';
+    });
+  }
+
+  if (noteOverlay) {
+    $('#noteCancel').addEventListener('click', () => closeNote(true));
+    $('#noteSave').addEventListener('click', saveNote);
+    $('#noteDelete').addEventListener('click', () => { if (editingNote) delNote(editingNote); });
+    noteOverlay.addEventListener('click', (e) => { if (e.target === noteOverlay) closeNote(true); });
+
+    $('#noteAddImg').addEventListener('click', () => $('#noteFile').click());
+    $('#noteFile').addEventListener('change', async (e) => {
+      await pickImages([...e.target.files]);
+      e.target.value = '';            // permite volver a elegir el mismo archivo
+    });
+    // Quitar una imagen del borrador (se borra del servidor recién al guardar).
+    $('#noteImgs').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-i]');
+      if (b) { draftImgs.splice(+b.dataset.i, 1); renderDraftImgs(); return; }
+      const img = e.target.closest('img');
+      if (img) zoomImage(img.src);
+    });
+    // Ctrl/Cmd+Enter guarda sin sacar las manos del teclado.
+    $('#noteText').addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveNote(); }
+    });
+  }
+
   function renderSearch() {
     const q = query.toLowerCase().replace(/^#/, '');
     const isTag = query.startsWith('#');
@@ -310,9 +520,16 @@
       if (isTag) return (t.tags || []).some(tg => tg.includes(q));
       return t.title.toLowerCase().includes(q) || (t.tags || []).some(tg => tg.includes(q)) || (t.cat || '').toLowerCase().includes(q);
     }).sort(byPrioDate);
-    content.innerHTML = res.length
-      ? `<div class="sec"><span class="lead">Resultados</span><span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
-      : `<div class="empty" style="padding:44px 20px"><b>Sin resultados</b><p>No hay tareas que coincidan con "${esc(query)}".</p></div>`;
+    // Las notas también entran en la búsqueda (por texto, no por etiqueta).
+    const notas = isTag ? [] : state.notes.filter(n => (n.text || '').toLowerCase().includes(q)).sort(byNote);
+    const bloques = (res.length
+      ? `<div class="sec"><span class="lead">Tareas</span><span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
+      : '')
+      + (notas.length
+        ? `<div class="sec"><span class="lead">Notas</span><span class="count">${notas.length}</span></div><div class="notes">${notas.map(noteCardHTML).join('')}</div>`
+        : '');
+    content.innerHTML = bloques
+      || `<div class="empty" style="padding:44px 20px"><b>Sin resultados</b><p>No hay tareas ni notas que coincidan con "${esc(query)}".</p></div>`;
   }
 
   function emptyBox(title, desc) {
@@ -351,6 +568,16 @@
       const row = actEl.closest('.shop-item'); shopItem(row.dataset.list, row.dataset.item, act === 'shop-toggle' ? 'toggle' : 'del'); return;
     }
     if (act === 'list-del') { delList(actEl.closest('.shop-list').dataset.list); return; }
+
+    const noteEl = actEl.closest('.note[data-note]');
+    if (noteEl) {
+      const nid = noteEl.dataset.note;
+      if (act === 'note-zoom') { zoomImage(actEl.src); return; }
+      if (act === 'note-edit') openNote(nid);
+      else if (act === 'note-del') delNote(nid);
+      else if (act === 'note-pin') pinNote(nid);
+      return;
+    }
 
     const card = actEl.closest('.row'); if (!card) return;
     const id = card.dataset.id;
@@ -532,7 +759,7 @@
     if (view === 'mes' && !selectedDay) selectedDay = ymd(new Date());
     render();
   }));
-  $('#fab').addEventListener('click', () => openSheet());
+  $('#fab').addEventListener('click', () => (view === 'notas' && !query) ? openNote() : openSheet());
 
   const searchbar = $('#searchbar'), searchInput = $('#searchInput');
   function openSearch(preset = '') {
@@ -845,11 +1072,14 @@
 
   // Lo que viaja a la nube. `notified` queda afuera a propósito: es memoria
   // local de qué avisos ya sonaron en ESTE dispositivo.
-  const syncPayload = () => ({ tasks: state.tasks, lists: state.lists, trash: state.trash });
+  const syncPayload = () => ({
+    tasks: state.tasks, lists: state.lists, notes: state.notes, trash: state.trash,
+  });
 
   function applyRemote(p) {
     state.tasks = p.tasks || [];
     state.lists = p.lists || [];
+    state.notes = p.notes || [];
     state.trash = p.trash || {};
     persist();
     render();
