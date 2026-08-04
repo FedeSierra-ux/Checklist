@@ -316,7 +316,7 @@
     const body = noteBody(n);
     const imgs = n.imgs || [];
     const tira = imgs.length
-      ? `<div class="note-imgs">${imgs.slice(0, 4).map((im, i) =>
+      ? `<div class="note-imgs${imgs.length === 1 ? ' solo' : ''}">${imgs.slice(0, 4).map((im, i) =>
           `<img src="${esc(im.url)}" alt="" loading="lazy" data-act="note-zoom" data-i="${i}">`).join('')}
          ${imgs.length > 4 ? `<span class="note-more">+${imgs.length - 4}</span>` : ''}</div>`
       : '';
@@ -374,6 +374,7 @@
 
   function renderDraftImgs() {
     const box = $('#noteImgs');
+    box.classList.toggle('solo', draftImgs.length === 1);
     box.innerHTML = draftImgs.map((im, i) =>
       `<div class="thumb"><img src="${esc(im.url)}" alt="" loading="lazy">
          <button type="button" data-i="${i}" aria-label="Quitar imagen">&times;</button></div>`).join('');
