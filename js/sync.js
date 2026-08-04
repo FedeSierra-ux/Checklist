@@ -158,6 +158,7 @@
     return {
       tasks: mergeItems(local.tasks, remote.tasks, trash),
       lists: mergeLists(local.lists, remote.lists, trash),
+      notes: mergeItems(local.notes, remote.notes, trash),
       trash,
     };
   }
@@ -168,6 +169,7 @@
     return JSON.stringify({
       tasks: sortById(p.tasks).map(t => ({ ...t, subtasks: sortById(t.subtasks) })),
       lists: sortById(p.lists).map(l => ({ ...l, items: sortById(l.items) })),
+      notes: sortById(p.notes),
       trash: Object.fromEntries(Object.entries(p.trash || {}).sort()),
     });
   }

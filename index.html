@@ -62,6 +62,10 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M2 3h3l2.4 12.6a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L21 7H6"/></svg>
         <span>Compras</span><span class="cnt" id="cntCompras" hidden></span>
       </button>
+      <button class="navc-btn" data-view="notas" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+        <span>Notas</span><span class="cnt" id="cntNotas" hidden></span>
+      </button>
     </nav>
 
     <!-- Content -->
@@ -146,6 +150,25 @@
           <button type="submit" class="btn primary" id="sheetSave">Guardar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Note editor sheet -->
+  <div class="sheet-overlay" id="noteOverlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+      <div class="sheet-grip"></div>
+      <h2 id="noteTitle">Nueva nota</h2>
+      <label class="field">
+        <span>Escribí libre <small>(la primera línea es el título)</small></span>
+        <textarea id="noteText" rows="9" placeholder="Ideas, links, lo que se te ocurra…" autocomplete="off"></textarea>
+      </label>
+      <div class="sheet-actions">
+        <button type="button" class="btn danger-icon" id="noteDelete" hidden aria-label="Eliminar nota">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        </button>
+        <button type="button" class="btn ghost" id="noteCancel">Cancelar</button>
+        <button type="button" class="btn primary" id="noteSave">Guardar</button>
+      </div>
     </div>
   </div>
 

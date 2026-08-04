@@ -31,7 +31,7 @@
       const old = localStorage.getItem('pendientes.v1');
       if (old) return migrate(JSON.parse(old));
     } catch (e) { /* ignore */ }
-    return { tasks: [], lists: [], notified: {}, trash: {} };
+    return { tasks: [], lists: [], notes: [], notified: {}, trash: {} };
   }
   function migrate(s) {
     // `u` = última modificación (ms). La usa la sincronización para decidir
@@ -43,6 +43,7 @@
     s.lists = (s.lists || []).map(l => ({
       u: t0, ...l, items: (l.items || []).map(i => ({ u: t0, ...i })),
     }));
+    s.notes = (s.notes || []).map(n => ({ u: t0, pinned: false, ...n }));
     s.notified = s.notified || {};
     s.trash = s.trash || {};   // id -> ms de borrado (tumbas, para no revivir)
     return s;
@@ -130,6 +131,7 @@
     else if (view === 'hoy') renderHoy();
     else if (view === 'semana') renderSemana();
     else if (view === 'mes') renderMes();
+    else if (view === 'notas') renderNotas();
     else renderCompras();
     if (flipFirst) flipPlay(flipFirst);
     checkWebReminders();
@@ -153,13 +155,13 @@
   function updateTop() {
     const now = new Date();
     $('#topDay').textContent = `${DIAS[now.getDay()]} · ${now.getDate()} ${MESES[now.getMonth()].slice(0, 3)}`;
-    const titles = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', compras: 'Compras' };
+    const titles = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', compras: 'Compras', notas: 'Notas' };
     $('#topTitle').textContent = query ? 'Buscar' : titles[view];
     $$('.navc-btn').forEach(b => {
       const on = b.dataset.view === view;
       b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
     });
-    $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || !!query);
+    $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || view === 'notas' || !!query);
     $('#fab').style.display = (view === 'mes' && !query) ? 'none' : 'flex';
     updateNavCounts();
   }
@@ -176,6 +178,7 @@
     setCnt('cntSemana', pend.length);
     const comprasN = state.lists.reduce((n, l) => n + l.items.filter(i => !i.done).length, 0);
     setCnt('cntCompras', comprasN);
+    setCnt('cntNotas', state.notes.length);
   }
 
   const byPrioDate = (a, b) => (b.priority || 0) - (a.priority || 0) || ((taskDate(a) || Infinity) - (taskDate(b) || Infinity));
@@ -303,6 +306,103 @@
     }).join('');
   }
 
+  // ---------- Notas ----------
+  // Texto libre, sin campos ni obligaciones: la primera línea hace de título.
+  const noteTitle = (n) => (n.text || '').split('\n')[0].trim() || 'Nota sin título';
+  // Los renglones se separan con "·" para que una lista no se lea como una
+  // frase corrida al colapsarla en el preview.
+  const noteBody = (n) => (n.text || '').split('\n').slice(1)
+    .map(l => l.trim()).filter(Boolean).join(' · ');
+  // Fijadas arriba; después, la editada más recién primero.
+  const byNote = (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.u || 0) - (a.u || 0);
+
+  function noteCardHTML(n) {
+    const body = noteBody(n);
+    return `<div class="note${n.pinned ? ' pinned' : ''}" data-note="${n.id}">
+        <div class="note-main" data-act="note-edit">
+          <div class="note-t">${esc(noteTitle(n))}</div>
+          ${body ? `<p class="note-b">${esc(body)}</p>` : ''}
+          <span class="note-when">${agoLabel(n.u)}</span>
+        </div>
+        <div class="note-acts">
+          <button class="note-pin ${n.pinned ? 'on' : ''}" data-act="note-pin" aria-label="${n.pinned ? 'Desfijar' : 'Fijar'}" title="${n.pinned ? 'Desfijar' : 'Fijar arriba'}">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="${n.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 2h6l-1 6 3 3v2H7v-2l3-3-1-6Z"/></svg>
+          </button>
+          <button class="note-del" data-act="note-del" aria-label="Eliminar nota">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          </button>
+        </div>
+      </div>`;
+  }
+
+  function renderNotas() {
+    if (!state.notes.length) {
+      content.innerHTML = `<div class="empty">
+        <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+        <b>Sin notas</b><p>Un lugar libre para ideas, links o lo que sea. Tocá el + para escribir.</p></div>`;
+      return;
+    }
+    content.innerHTML = `<div class="notes">${[...state.notes].sort(byNote).map(noteCardHTML).join('')}</div>`;
+  }
+
+  // --- Editor de notas (hoja aparte: una sola caja de texto) ---
+  const noteOverlay = $('#noteOverlay');
+  let editingNote = null;
+
+  function openNote(id = null) {
+    editingNote = id;
+    const n = id ? state.notes.find(x => x.id === id) : null;
+    $('#noteTitle').textContent = n ? 'Editar nota' : 'Nueva nota';
+    $('#noteText').value = n ? n.text : '';
+    $('#noteDelete').hidden = !id;
+    noteOverlay.hidden = false;
+    setTimeout(() => $('#noteText').focus(), 250);
+  }
+  function closeNote() { noteOverlay.hidden = true; editingNote = null; }
+
+  function saveNote() {
+    const text = $('#noteText').value.trim();
+    if (!text) {                       // vaciar una nota existente = borrarla
+      if (editingNote) { delNote(editingNote, true); return; }
+      closeNote(); return;
+    }
+    if (editingNote) {
+      const n = state.notes.find(x => x.id === editingNote);
+      if (n) { n.text = text; touch(n); }
+    } else {
+      state.notes.unshift({ id: uid(), text, pinned: false, u: Date.now() });
+    }
+    const era = editingNote;
+    closeNote(); save(); render();
+    toast(era ? 'Nota actualizada' : 'Nota guardada');
+  }
+
+  function delNote(id, silent = false) {
+    const n = state.notes.find(x => x.id === id);
+    if (!silent && n && !confirm(`¿Eliminar "${noteTitle(n)}"?`)) return;
+    state.notes = state.notes.filter(x => x.id !== id);
+    tomb(id);
+    if (editingNote === id) closeNote();
+    save(); render(); toast('Nota eliminada');
+  }
+
+  function pinNote(id) {
+    const n = state.notes.find(x => x.id === id); if (!n) return;
+    n.pinned = !n.pinned; touch(n); haptic();
+    save(); render(); toast(n.pinned ? '📌 Fijada arriba' : 'Desfijada');
+  }
+
+  if (noteOverlay) {
+    $('#noteCancel').addEventListener('click', closeNote);
+    $('#noteSave').addEventListener('click', saveNote);
+    $('#noteDelete').addEventListener('click', () => { if (editingNote) delNote(editingNote); });
+    noteOverlay.addEventListener('click', (e) => { if (e.target === noteOverlay) closeNote(); });
+    // Ctrl/Cmd+Enter guarda sin sacar las manos del teclado.
+    $('#noteText').addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveNote(); }
+    });
+  }
+
   function renderSearch() {
     const q = query.toLowerCase().replace(/^#/, '');
     const isTag = query.startsWith('#');
@@ -310,9 +410,16 @@
       if (isTag) return (t.tags || []).some(tg => tg.includes(q));
       return t.title.toLowerCase().includes(q) || (t.tags || []).some(tg => tg.includes(q)) || (t.cat || '').toLowerCase().includes(q);
     }).sort(byPrioDate);
-    content.innerHTML = res.length
-      ? `<div class="sec"><span class="lead">Resultados</span><span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
-      : `<div class="empty" style="padding:44px 20px"><b>Sin resultados</b><p>No hay tareas que coincidan con "${esc(query)}".</p></div>`;
+    // Las notas también entran en la búsqueda (por texto, no por etiqueta).
+    const notas = isTag ? [] : state.notes.filter(n => (n.text || '').toLowerCase().includes(q)).sort(byNote);
+    const bloques = (res.length
+      ? `<div class="sec"><span class="lead">Tareas</span><span class="count">${res.length}</span></div>` + res.map(rowHTML).join('')
+      : '')
+      + (notas.length
+        ? `<div class="sec"><span class="lead">Notas</span><span class="count">${notas.length}</span></div><div class="notes">${notas.map(noteCardHTML).join('')}</div>`
+        : '');
+    content.innerHTML = bloques
+      || `<div class="empty" style="padding:44px 20px"><b>Sin resultados</b><p>No hay tareas ni notas que coincidan con "${esc(query)}".</p></div>`;
   }
 
   function emptyBox(title, desc) {
@@ -351,6 +458,15 @@
       const row = actEl.closest('.shop-item'); shopItem(row.dataset.list, row.dataset.item, act === 'shop-toggle' ? 'toggle' : 'del'); return;
     }
     if (act === 'list-del') { delList(actEl.closest('.shop-list').dataset.list); return; }
+
+    const noteEl = actEl.closest('.note[data-note]');
+    if (noteEl) {
+      const nid = noteEl.dataset.note;
+      if (act === 'note-edit') openNote(nid);
+      else if (act === 'note-del') delNote(nid);
+      else if (act === 'note-pin') pinNote(nid);
+      return;
+    }
 
     const card = actEl.closest('.row'); if (!card) return;
     const id = card.dataset.id;
@@ -532,7 +648,7 @@
     if (view === 'mes' && !selectedDay) selectedDay = ymd(new Date());
     render();
   }));
-  $('#fab').addEventListener('click', () => openSheet());
+  $('#fab').addEventListener('click', () => (view === 'notas' && !query) ? openNote() : openSheet());
 
   const searchbar = $('#searchbar'), searchInput = $('#searchInput');
   function openSearch(preset = '') {
@@ -845,11 +961,14 @@
 
   // Lo que viaja a la nube. `notified` queda afuera a propósito: es memoria
   // local de qué avisos ya sonaron en ESTE dispositivo.
-  const syncPayload = () => ({ tasks: state.tasks, lists: state.lists, trash: state.trash });
+  const syncPayload = () => ({
+    tasks: state.tasks, lists: state.lists, notes: state.notes, trash: state.trash,
+  });
 
   function applyRemote(p) {
     state.tasks = p.tasks || [];
     state.lists = p.lists || [];
+    state.notes = p.notes || [];
     state.trash = p.trash || {};
     persist();
     render();

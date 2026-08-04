@@ -7,7 +7,7 @@ querés, se sincroniza con tus otros dispositivos con un código.
 
 ## Qué hace
 
-- **Hoy · Semana · Mes · Compras** en una sola barra de navegación.
+- **Hoy · Semana · Mes · Compras · Notas** en una sola barra de navegación.
 - **Vista Hoy** — solo lo de hoy y lo vencido, sin ruido.
 - **Prioridades** en 4 niveles con color (alta / media / baja / ninguna); lo
   urgente sube arriba.
@@ -17,6 +17,7 @@ querés, se sincroniza con tus otros dispositivos con un código.
 - **Escritura natural**: escribís *"mañana 15:00 pedir turno #salud !alta"* y
   entiende fecha, hora, prioridad y etiqueta solas.
 - **Listas de compras** con ítems tildables.
+- **Notas** de texto libre para ideas y apuntes, con fijado y búsqueda.
 - **Notificaciones** antes de cada vencimiento y resumen del día.
 - **Sincronización opcional** PC ⇆ celular con un código, sin crear cuentas.
 - **Tema claro/oscuro** automático.
@@ -139,7 +140,7 @@ o con el teléfono conectado: `adb install app-debug.apk`.
 index.html              App (raíz = única fuente de verdad, sirve para la PWA)
 css/styles.css          Estilos (tema claro/oscuro, tipografía Manrope embebida)
 js/app.js               Lógica: tareas, prioridades, Hoy, subtareas, tags,
-                        búsqueda, notificaciones y puente nativo
+                        notas, búsqueda, notificaciones y puente nativo
 js/sync.js              Sincronización entre dispositivos (merge + Supabase)
 js/sync-config.js       URL y clave del proyecto de Supabase (opcional)
 supabase/schema.sql     Tabla y funciones a correr en Supabase
