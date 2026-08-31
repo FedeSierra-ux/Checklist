@@ -1,0 +1,56 @@
+# Mantiene despierto el proyecto de Supabase.
+#
+# El plan Free pausa un proyecto tras ~7 días sin actividad en la base, y salir
+# de esa pausa puede dejar servicios rotos (nos pasó: Storage quedó devolviendo
+# 544 DatabaseTimeout y hubo que migrar de proyecto). Esto lo evita haciendo una
+# consulta real a la base dos veces por semana.
+#
+# Lee la URL y la clave del mismo js/sync-config.js que usa la app, así no hay
+# dos lugares que puedan quedar desincronizados.
+
+name: Supabase keepalive
+
+on:
+  schedule:
+    # Lunes y jueves 12:17 UTC. La separación máxima queda en 4 días, bien
+    # por debajo de los ~7 que disparan la pausa, así que una corrida fallida
+    # no alcanza para que el proyecto se duerma.
+    - cron: '17 12 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Leer la config de sincronización
+        id: cfg
+        run: |
+          set -euo pipefail
+          url=$(grep -oP "url:\s*'\K[^']+" js/sync-config.js)
+          key=$(grep -oP "anonKey:\s*'\K[^']+" js/sync-config.js)
+          if [ -z "$url" ] || [ -z "$key" ]; then
+            echo "::error::No pude leer url/anonKey de js/sync-config.js"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      - name: Consultar la base
+        run: |
+          set -euo pipefail
+          # sync_pull con un código inexistente: toca la base de verdad (que es
+          # lo que cuenta como actividad) y no lee ni modifica datos de nadie.
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 30 \
+            -X POST "${{ steps.cfg.outputs.url }}/rest/v1/rpc/sync_pull" \
+            -H "apikey: ${{ steps.cfg.outputs.key }}" \
+            -H "Authorization: Bearer ${{ steps.cfg.outputs.key }}" \
+            -H 'Content-Type: application/json' \
+            -d '{"p_code":"keepalive-0000000000"}')
+          echo "HTTP $code"
+          cat /tmp/body
+          if [ "$code" != "200" ]; then
+            echo "::error::El ping falló con HTTP $code — revisá el estado del proyecto en Supabase"
+            exit 1
+          fi
