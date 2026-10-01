@@ -188,17 +188,18 @@
 
       <div id="syncSetup" hidden>
         <p class="sync-help">
-          Una sola vez: creá un proyecto gratis en <b>supabase.com</b>, corré el
-          archivo <code>supabase/schema.sql</code> del repo en el SQL Editor y
-          copiá acá los datos de <i>Settings → API Keys</i>.
+          Una sola vez: creá un proyecto gratis en <b>console.firebase.google.com</b>,
+          creá la base <i>Firestore</i>, publicá las reglas de
+          <code>firebase/firestore.rules</code> y copiá acá los datos de
+          <i>Configuración del proyecto → General</i>.
         </p>
         <label class="field">
-          <span>URL del proyecto</span>
-          <input type="url" id="syncUrl" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false">
+          <span>Project ID</span>
+          <input type="text" id="syncUrl" placeholder="tudu-1a2b3" autocomplete="off" spellcheck="false">
         </label>
         <label class="field">
-          <span>Clave pública <small>(Publishable key — NO la Secret)</small></span>
-          <input type="text" id="syncKey" placeholder="sb_publishable_…" autocomplete="off" spellcheck="false">
+          <span>Web API key</span>
+          <input type="text" id="syncKey" placeholder="AIza…" autocomplete="off" spellcheck="false">
         </label>
         <div class="sheet-actions">
           <button type="button" class="btn primary" id="syncSaveCfg">Guardar proyecto</button>

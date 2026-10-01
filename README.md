@@ -27,24 +27,27 @@ querés, se sincroniza con tus otros dispositivos con un código.
 
 Por defecto cada dispositivo guarda lo suyo. Si querés cargar tareas en la PC y
 verlas en el celular, hay que activar la sincronización: un **código** compartido
-identifica tu espacio en [Supabase](https://supabase.com) (plan gratuito) y todos
-los dispositivos con ese código ven lo mismo. No hay cuentas ni login.
+identifica tu espacio en [Firebase](https://firebase.google.com) (Firestore,
+plan gratuito *Spark*) y todos los dispositivos con ese código ven lo mismo. No
+hay cuentas ni login.
 
-**Preparar el proyecto (una sola vez, ~3 minutos)**
+> **Por qué Firebase y no Supabase.** El plan gratis de Supabase pausa o da de
+> baja los proyectos, y ya perdimos uno así. El plan Spark de Firestore no se
+> pausa por inactividad y no pide tarjeta.
 
-1. Creá un proyecto gratis en [supabase.com](https://supabase.com).
-2. Abrí **SQL Editor**, pegá el contenido de [`supabase/schema.sql`](supabase/schema.sql)
-   y dale **Run**.
-3. Andá a **Settings → API Keys** y copiá el **Project URL** y la
-   **Publishable key** (`sb_publishable_…`; en proyectos viejos es la *anon
-   public*, un JWT que empieza con `eyJ…`). La **Secret key** no se usa nunca
-   acá: saltea RLS y da acceso total.
-4. Pegá esos dos valores en [`js/sync-config.js`](js/sync-config.js) y hacé
+**Preparar el proyecto (una sola vez, ~5 minutos)**
+
+1. Entrá a [console.firebase.google.com](https://console.firebase.google.com)
+   → **Crear un proyecto** (Analytics se puede desactivar).
+2. Menú **Compilación → Firestore Database → Crear base de datos**, elegí una
+   ubicación (ej. `southamerica-east1`) y empezá en **modo de producción**.
+3. En la pestaña **Reglas**, reemplazá todo por el contenido de
+   [`firebase/firestore.rules`](firebase/firestore.rules) y dale **Publicar**.
+4. **Configuración del proyecto (⚙) → General → Tus apps → Web (`</>`)**:
+   registrá una app (sin Hosting) y copiá `projectId` y `apiKey` (`AIza…`).
+5. Pegá esos dos valores en [`js/sync-config.js`](js/sync-config.js) y hacé
    commit. (Alternativa sin tocar código: dejalos vacíos y cargalos desde el
    panel ☁ de la app, en cada dispositivo.)
-
-> En este repo los pasos 1-4 ya están hechos: `js/sync-config.js` viene con el
-> proyecto cargado, así que sólo hay que conectar los dispositivos.
 
 **Conectar los dispositivos**
 
@@ -63,30 +66,23 @@ conservan las dos; y lo borrado en un dispositivo no revive desde el otro.
 
 ### Imágenes en las notas
 
-Las imágenes van a **Supabase Storage**, no adentro del JSON: la nota guarda
-sólo la URL (unos 100 bytes), así la sincronización no reenvía las fotos en
-cada cambio. Antes de subir se redimensionan a 1600 px y se pasan a JPEG al
-80%: en la prueba automatizada, una captura de 2400×1600 baja de 3,4 MB a
-20 KB. Una foto de celular de 12 MP queda en 200-400 KB.
+Cada imagen es un documento aparte de Firestore (`imgs/{id}`), no va adentro
+del estado: la nota guarda sólo el id, así la sincronización no reenvía las
+fotos en cada cambio. Antes de subir se redimensionan a 1600 px y se pasan a
+JPEG al 80%; si todavía no entran en el límite de 1 MB por documento, se
+achican un poco más. Una foto de celular de 12 MP queda en 200-400 KB.
+(Firebase Storage ya no tiene plan gratis; por eso no se usa.)
 
-Con el gigabyte del plan gratuito entran miles de imágenes. Al borrar una nota
-(o sacarle una imagen) el archivo se borra del servidor y el espacio vuelve.
+El plan gratuito da 1 GB en Firestore: entran miles de imágenes. Al borrar una
+nota (o sacarle una imagen) el documento se borra y el espacio vuelve.
 Adjuntar requiere tener la sincronización activada.
 
-**El bucket es el punto débil del modelo.** A diferencia de la tabla, acá la
-clave publicable alcanza para subir y borrar: quien la lea puede llenar o
-vaciar el bucket. El límite de 5 MB por archivo y la lista de tipos permitidos
-acotan el daño, pero si te importa, no dejes la clave en un repo público.
-Las URLs, en cambio, llevan un nombre aleatorio de 128 bits bajo una carpeta
-derivada del hash del código: son públicas pero nadie las adivina, y el código
-nunca viaja en la URL.
-
-**Sobre la seguridad.** La tabla queda con RLS activo y sin políticas: la clave
-pública no puede leer nada por sí sola. El único acceso son dos funciones que
-exigen el código, y el código generado tiene ~100 bits de azar. Aun así, **el
-código es la llave de tus tareas**: tratalo como una contraseña y no lo publiques.
-Los datos viajan sin cifrado extremo a extremo, así que quedan legibles en tu
-propio proyecto de Supabase.
+**Sobre la seguridad.** Las reglas no dejan *listar* nada: sólo leer o escribir
+un documento cuyo id ya conocés. El id de tu espacio es el código (~100 bits de
+azar) y el de cada imagen tiene 128 bits de azar, bajo un prefijo derivado del
+hash del código. Aun así, **el código es la llave de tus tareas**: tratalo como
+una contraseña y no lo publiques. Los datos viajan sin cifrado extremo a
+extremo, así que quedan legibles en tu propio proyecto de Firebase.
 
 Si nunca activás la sincronización, la app sigue funcionando igual que antes:
 todo local, sin red.
@@ -162,9 +158,9 @@ index.html              App (raíz = única fuente de verdad, sirve para la PWA)
 css/styles.css          Estilos (tema claro/oscuro, tipografía Manrope embebida)
 js/app.js               Lógica: tareas, prioridades, Hoy, subtareas, tags,
                         notas, búsqueda, notificaciones y puente nativo
-js/sync.js              Sincronización entre dispositivos (merge + Supabase)
-js/sync-config.js       URL y clave del proyecto de Supabase (opcional)
-supabase/schema.sql     Tabla y funciones a correr en Supabase
+js/sync.js              Sincronización entre dispositivos (merge + Firestore)
+js/sync-config.js       Project ID y API key de Firebase (opcional)
+firebase/firestore.rules Reglas a publicar en Firestore
 sw.js                   Service worker (cache offline de la PWA)
 manifest.webmanifest    Metadatos PWA
 icons/ · assets/fonts/  Íconos y tipografía
@@ -195,6 +191,6 @@ Sin sincronización, todos los datos viven en el dispositivo (`localStorage` en
 web / `SharedPreferences` en Android) y no se envía nada a ningún servidor.
 
 Si activás la sincronización, tus tareas y listas se copian a **tu propio**
-proyecto de Supabase, bajo el código que elegiste. Los avisos ya mostrados
+proyecto de Firebase, bajo el código que elegiste. Los avisos ya mostrados
 (`notified`) nunca salen del dispositivo. Podés cortarlo cuando quieras con
 **Desconectar**: los datos quedan en el dispositivo y dejan de subirse.

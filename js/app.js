@@ -312,12 +312,20 @@
   // Fijadas arriba; después, la editada más recién primero.
   const byNote = (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.u || 0) - (a.u || 0);
 
+  // Las imágenes nuevas viven en Firestore: se pintan con data-img y sync.js
+  // completa el src. Las viejas (con url http) se muestran tal cual.
+  function imgAttrs(im) {
+    if (im.url) return `src="${esc(im.url)}"`;
+    const src = Sync()?.imageSrc(im) || '';
+    return `${src ? `src="${esc(src)}" data-loaded="1" ` : ''}data-img="${esc(im.path)}"`;
+  }
+
   function noteCardHTML(n) {
     const body = noteBody(n);
     const imgs = n.imgs || [];
     const tira = imgs.length
       ? `<div class="note-imgs${imgs.length === 1 ? ' solo' : ''}">${imgs.slice(0, 4).map((im, i) =>
-          `<img src="${esc(im.url)}" alt="" loading="lazy" data-act="note-zoom" data-i="${i}">`).join('')}
+          `<img ${imgAttrs(im)} alt="" loading="lazy" data-act="note-zoom" data-i="${i}">`).join('')}
          ${imgs.length > 4 ? `<span class="note-more">+${imgs.length - 4}</span>` : ''}</div>`
       : '';
     return `<div class="note${n.pinned ? ' pinned' : ''}" data-note="${n.id}">
@@ -376,7 +384,7 @@
     const box = $('#noteImgs');
     box.classList.toggle('solo', draftImgs.length === 1);
     box.innerHTML = draftImgs.map((im, i) =>
-      `<div class="thumb"><img src="${esc(im.url)}" alt="" loading="lazy">
+      `<div class="thumb"><img ${imgAttrs(im)} alt="" loading="lazy">
          <button type="button" data-i="${i}" aria-label="Quitar imagen">&times;</button></div>`).join('');
     box.hidden = !draftImgs.length;
   }
@@ -1115,7 +1123,7 @@
     else codeInput.readOnly = false;
 
     let txt;
-    if (!st.configured) txt = 'Pegá los datos de tu proyecto de Supabase para empezar.';
+    if (!st.configured) txt = 'Pegá los datos de tu proyecto de Firebase para empezar.';
     else if (!st.on) txt = 'Sin conectar. Generá un código acá y pegá el mismo en el otro dispositivo.';
     else if (st.busy) txt = 'Sincronizando…';
     else if (st.error) txt = '⚠ ' + st.error;

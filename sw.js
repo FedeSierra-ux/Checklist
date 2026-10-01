@@ -1,5 +1,5 @@
 /* Service Worker — cache offline para Tudu */
-const CACHE = 'tudu-v2';
+const CACHE = 'tudu-v3';
 const ASSETS = [
   './',
   './index.html',
