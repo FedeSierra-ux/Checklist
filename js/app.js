@@ -31,7 +31,7 @@
       const old = localStorage.getItem('pendientes.v1');
       if (old) return migrate(JSON.parse(old));
     } catch (e) { /* ignore */ }
-    return { tasks: [], lists: [], notes: [], notified: {}, trash: {} };
+    return { tasks: [], lists: [], notes: [], prices: [], notified: {}, trash: {} };
   }
   function migrate(s) {
     // `u` = última modificación (ms). La usa la sincronización para decidir
@@ -44,6 +44,7 @@
       u: t0, ...l, items: (l.items || []).map(i => ({ u: t0, ...i })),
     }));
     s.notes = (s.notes || []).map(n => ({ u: t0, pinned: false, imgs: [], ...n }));
+    s.prices = (s.prices || []).map(p => ({ u: t0, ...p }));
     s.notified = s.notified || {};
     s.trash = s.trash || {};   // id -> ms de borrado (tumbas, para no revivir)
     return s;
@@ -131,6 +132,7 @@
     else if (view === 'semana') renderSemana();
     else if (view === 'mes') renderMes();
     else if (view === 'notas') renderNotas();
+    else if (view === 'precios') renderPrecios();
     else renderCompras();
     if (flipFirst) flipPlay(flipFirst);
     checkWebReminders();
@@ -154,13 +156,13 @@
   function updateTop() {
     const now = new Date();
     $('#topDay').textContent = `${DIAS[now.getDay()]} · ${now.getDate()} ${MESES[now.getMonth()].slice(0, 3)}`;
-    const titles = { semana: 'Esta semana', mes: 'Este mes', compras: 'Compras', notas: 'Notas' };
+    const titles = { semana: 'Esta semana', mes: 'Este mes', compras: 'Compras', notas: 'Notas', precios: 'Precios' };
     $('#topTitle').textContent = query ? 'Buscar' : titles[view];
     $$('.navc-btn').forEach(b => {
       const on = b.dataset.view === view;
       b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
     });
-    $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || view === 'notas' || !!query);
+    $('#progressWrap').classList.toggle('hide', view === 'compras' || view === 'mes' || view === 'notas' || view === 'precios' || !!query);
     $('#fab').style.display = (view === 'mes' && !query) ? 'none' : 'flex';
     updateNavCounts();
   }
@@ -577,6 +579,9 @@
     }
     if (act === 'list-del') { delList(actEl.closest('.shop-list').dataset.list); return; }
 
+    const priceEl = actEl.closest('.price[data-price]');
+    if (priceEl) { if (act === 'price-edit') openPrice(priceEl.dataset.price); return; }
+
     const noteEl = actEl.closest('.note[data-note]');
     if (noteEl) {
       const nid = noteEl.dataset.note;
@@ -761,13 +766,110 @@
   });
   overlay.addEventListener('click', (e) => { if (e.target === overlay) hideSheet(); });
 
+
+  // ---------- Precios ----------
+  // Cada registro es una compra: producto, kilos, lugar y lo que se pagó.
+  // Se agrupan por producto y se compara el $/kg; el más barato se marca.
+  const money = (n) => '$' + Math.round(n).toLocaleString('es-AR');
+  const kgFmt = (n) => (+n.toFixed(3)).toLocaleString('es-AR') + ' kg';
+  const norm = (s) => String(s).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const perKg = (p) => p.price / p.qty;
+
+  function priceRowHTML(p, best) {
+    const d = new Date(p.date);
+    const fecha = `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
+    return `<div class="price${best ? ' best' : ''}" data-price="${p.id}" data-act="price-edit">
+        <div class="price-main">
+          <div class="price-place">${esc(p.place)}${best ? '<span class="price-badge">Más barato</span>' : ''}</div>
+          <div class="price-sub">${kgFmt(p.qty)} · ${money(p.price)} · ${fecha}</div>
+        </div>
+        <div class="price-kg"><b>${money(perKg(p))}</b><small>por kg</small></div>
+      </div>`;
+  }
+  function renderPrecios() {
+    const groups = new Map();
+    state.prices.forEach(p => {
+      const k = norm(p.product);
+      if (!groups.has(k)) groups.set(k, { name: p.product, items: [] });
+      groups.get(k).items.push(p);
+    });
+    if (!groups.size) {
+      content.innerHTML = emptyBox('Sin precios', 'Cargá lo que pagaste (producto, kilos, lugar y precio) con el botón + y comparalo.');
+      return;
+    }
+    content.innerHTML = [...groups.values()]
+      .map(g => ({ ...g, items: g.items.sort((a, b) => perKg(a) - perKg(b) || b.date.localeCompare(a.date)) }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+      .map(g => {
+        const min = perKg(g.items[0]);
+        const multi = g.items.length > 1;
+        const max = perKg(g.items[g.items.length - 1]);
+        const ahorro = multi && max > min ? `<span class="badge">Ahorrás ${money(max - min)}/kg</span>` : '';
+        return `<div class="price-group">
+            <div class="shop-head"><h3>${esc(g.name)}</h3>${ahorro}</div>
+            ${g.items.map(p => priceRowHTML(p, multi && perKg(p) === min)).join('')}
+          </div>`;
+      }).join('');
+  }
+
+  const priceOverlay = $('#priceOverlay');
+  let editingPrice = null;
+  function fillDatalists() {
+    const uniq = (f) => [...new Set(state.prices.map(f))].sort((a, b) => a.localeCompare(b, 'es'));
+    $('#pProductList').innerHTML = uniq(p => p.product).map(v => `<option value="${esc(v)}">`).join('');
+    $('#pPlaceList').innerHTML = uniq(p => p.place).map(v => `<option value="${esc(v)}">`).join('');
+  }
+  function updatePriceHint() {
+    const q = parseFloat($('#pQty').value), pr = parseFloat($('#pPrice').value);
+    $('#pHint').textContent = (q > 0 && pr >= 0) ? `Sale ${money(pr / q)} por kg` : '';
+  }
+  function openPrice(id = null) {
+    editingPrice = id;
+    const p = id ? state.prices.find(x => x.id === id) : null;
+    $('#priceTitle').textContent = p ? 'Editar precio' : 'Nuevo precio';
+    $('#pProduct').value = p ? p.product : '';
+    $('#pPlace').value = p ? p.place : '';
+    $('#pQty').value = p ? p.qty : '';
+    $('#pPrice').value = p ? p.price : '';
+    $('#priceDelete').hidden = !p;
+    fillDatalists(); updatePriceHint();
+    priceOverlay.hidden = false;
+    setTimeout(() => $('#pProduct').focus(), 250);
+  }
+  function closePrice() { priceOverlay.hidden = true; editingPrice = null; }
+  function delPrice(id) {
+    const p = state.prices.find(x => x.id === id); if (!p) return;
+    if (!confirm(`¿Eliminar ${p.product} en ${p.place}?`)) return;
+    state.prices = state.prices.filter(x => x.id !== id); tomb(id);
+    closePrice(); save(); render();
+  }
+  if (priceOverlay) {
+    $('#priceCancel').addEventListener('click', closePrice);
+    priceOverlay.addEventListener('click', (e) => { if (e.target === priceOverlay) closePrice(); });
+    $('#priceDelete').addEventListener('click', () => { if (editingPrice) delPrice(editingPrice); });
+    $('#pQty').addEventListener('input', updatePriceHint);
+    $('#pPrice').addEventListener('input', updatePriceHint);
+    $('#priceForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const product = $('#pProduct').value.trim(), place = $('#pPlace').value.trim();
+      const qty = parseFloat($('#pQty').value), price = parseFloat($('#pPrice').value);
+      if (!product || !place || !(qty > 0) || !(price >= 0)) { toast('Revisá los datos'); return; }
+      // Si ya existe el producto con otra mayúscula/tilde, se reusa su nombre.
+      const prev = state.prices.find(x => norm(x.product) === norm(product));
+      const data = { product: prev ? prev.product : product, place, qty, price };
+      if (editingPrice) { const p = state.prices.find(x => x.id === editingPrice); Object.assign(p, data); touch(p); }
+      else state.prices.push({ id: uid(), date: ymd(new Date()), u: Date.now(), ...data });
+      closePrice(); save(); render();
+    });
+  }
+
   // ---------- Nav / search ----------
   $$('.navc-btn').forEach(btn => btn.addEventListener('click', () => {
     view = btn.dataset.view; closeSearch(false);
     if (view === 'mes' && !selectedDay) selectedDay = ymd(new Date());
     render();
   }));
-  $('#fab').addEventListener('click', () => (view === 'notas' && !query) ? openNote() : openSheet());
+  $('#fab').addEventListener('click', () => (view === 'notas' && !query) ? openNote() : (view === 'precios' && !query) ? openPrice() : openSheet());
 
   const searchbar = $('#searchbar'), searchInput = $('#searchInput');
   function openSearch(preset = '') {
@@ -1081,13 +1183,14 @@
   // Lo que viaja a la nube. `notified` queda afuera a propósito: es memoria
   // local de qué avisos ya sonaron en ESTE dispositivo.
   const syncPayload = () => ({
-    tasks: state.tasks, lists: state.lists, notes: state.notes, trash: state.trash,
+    tasks: state.tasks, lists: state.lists, notes: state.notes, prices: state.prices, trash: state.trash,
   });
 
   function applyRemote(p) {
     state.tasks = p.tasks || [];
     state.lists = p.lists || [];
     state.notes = p.notes || [];
+    state.prices = p.prices || [];
     state.trash = p.trash || {};
     persist();
     render();
