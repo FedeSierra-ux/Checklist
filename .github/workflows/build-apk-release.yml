@@ -52,6 +52,11 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
+        # El SDK nuevo del runner ya no trae el paquete "tools" que la acción
+        # instala por defecto (falla con "Failed to find package 'tools'").
+        with:
+          packages: "platform-tools"
+          log-accepted-android-sdk-licenses: false
 
       - name: Instalar dependencias
         run: npm ci

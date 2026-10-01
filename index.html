@@ -4,11 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#a8683f">
-  <meta name="description" content="Tus tareas pendientes ordenadas por vencimiento: hoy, semana, mes, listas de compras y avisos.">
+  <meta name="description" content="Tus tareas pendientes ordenadas por vencimiento: semana, mes, compras con precios, notas y avisos.">
   <title>Tudu</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preload" href="assets/fonts/manrope.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -17,10 +18,10 @@
     <header class="topbar">
       <div class="topbar-main">
         <p class="day" id="topDay">—</p>
-        <h1 id="topTitle">Hoy</h1>
+        <h1 id="topTitle">Esta semana</h1>
       </div>
       <div class="topbar-actions">
-        <button class="icon-btn" id="searchBtn" title="Buscar" aria-label="Buscar">
+        <button class="icon-btn" id="searchBtn" title="Buscar (/)" aria-label="Buscar">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         </button>
         <button class="icon-btn" id="syncBtn" title="Sincronizar con otros dispositivos" aria-label="Sincronizar con otros dispositivos">
@@ -35,23 +36,18 @@
     <!-- Search bar -->
     <div class="searchbar" id="searchbar" hidden>
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      <input type="text" id="searchInput" placeholder="Buscar tareas o #etiqueta…" autocomplete="off">
+      <input type="search" id="searchInput" placeholder="Buscar tareas, notas, compras o #etiqueta…" autocomplete="off" aria-label="Buscar">
       <button id="searchClear" aria-label="Cerrar búsqueda">&times;</button>
     </div>
 
-    <div class="progress-wrap" id="progressWrap">
-      <div class="bar"><i id="progressFill" style="width:0%"></i></div>
-      <span class="pct" id="progressPct">0/0</span>
-    </div>
-
-    <!-- Single navigation (chips con contador) -->
+    <!-- Navegación: 4 pestañas que entran siempre, sin scroll -->
     <nav class="navc" role="tablist" aria-label="Vistas">
       <button class="navc-btn on" data-view="semana" role="tab" aria-selected="true">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
         <span>Semana</span><span class="cnt" id="cntSemana" hidden></span>
       </button>
       <button class="navc-btn" data-view="mes" role="tab" aria-selected="false">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
         <span>Mes</span>
       </button>
       <button class="navc-btn" data-view="compras" role="tab" aria-selected="false">
@@ -62,76 +58,92 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
         <span>Notas</span><span class="cnt" id="cntNotas" hidden></span>
       </button>
-      <button class="navc-btn" data-view="precios" role="tab" aria-selected="false">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 6.5C17 4.6 14.8 3.5 12 3.5S7 4.8 7 7c0 4.5 10 2.5 10 7 0 2.2-2.2 3.5-5 3.5s-5-1.1-5-3"/></svg>
-        <span>Precios</span>
-      </button>
     </nav>
 
     <!-- Content -->
-    <main class="content" id="content"></main>
+    <main class="content" id="content" role="tabpanel"></main>
 
     <!-- FAB -->
-    <button class="fab" id="fab" aria-label="Agregar">
+    <button class="fab" id="fab" aria-label="Agregar" title="Agregar (N)">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     </button>
   </div>
 
-  <!-- Task / list editor sheet -->
+  <!-- Hoja de tarea: a la vista lo esencial, el resto en "Más opciones" -->
   <div class="sheet-overlay" id="sheetOverlay" hidden>
-    <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
       <div class="sheet-grip"></div>
       <h2 id="sheetTitle">Nueva tarea</h2>
       <form id="taskForm">
         <label class="field">
           <span>¿Qué tenés que hacer?</span>
-          <input type="text" id="fTitle" placeholder="Ej: mañana 15:00 pedir turno #salud" autocomplete="off" required>
+          <input type="text" id="fTitle" placeholder="Ej: el viernes a las 5 pedir turno #salud" autocomplete="off" required>
           <small class="hint" id="parseHint"></small>
         </label>
 
-        <div class="task-only">
+        <div class="field-row">
+          <label class="field"><span>Fecha</span><input type="date" id="fDate"></label>
+          <label class="field"><span>Hora</span><input type="time" id="fTime"></label>
+        </div>
+
+        <div class="field">
+          <span>Prioridad</span>
+          <div class="prio-select" id="prioChips">
+            <button type="button" class="pchip p3" data-p="3">Alta</button>
+            <button type="button" class="pchip p2" data-p="2">Media</button>
+            <button type="button" class="pchip p1" data-p="1">Baja</button>
+            <button type="button" class="pchip on p0" data-p="0">Ninguna</button>
+          </div>
+        </div>
+
+        <button type="button" class="more-toggle" id="moreToggle" aria-expanded="false" aria-controls="moreBox">
+          <span class="more-l">Más opciones</span>
+          <small class="more-sum" id="moreSummary"></small>
+          <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+
+        <div class="more-box" id="moreBox" hidden>
           <div class="field">
-            <span>Prioridad</span>
-            <div class="prio-select" id="prioChips">
-              <button type="button" class="pchip p3" data-p="3">Alta</button>
-              <button type="button" class="pchip p2" data-p="2">Media</button>
-              <button type="button" class="pchip p1" data-p="1">Baja</button>
-              <button type="button" class="pchip on p0" data-p="0">Ninguna</button>
-            </div>
-          </div>
-
-          <div class="field-row">
-            <label class="field"><span>Fecha límite</span><input type="date" id="fDate"></label>
-            <label class="field"><span>Hora</span><input type="time" id="fTime"></label>
+            <span>Etiquetas <small>(tocá una o escribí nuevas)</small></span>
+            <div class="chips-select tag-chips" id="tagChips"></div>
+            <input type="text" id="fTags" placeholder="#salud #casa" autocomplete="off" aria-label="Etiquetas">
           </div>
 
           <div class="field">
-            <span>Categoría</span>
-            <div class="chips-select" id="catChips">
-              <button type="button" class="cchip on" data-cat="General">General</button>
-              <button type="button" class="cchip" data-cat="Salud">Salud</button>
-              <button type="button" class="cchip" data-cat="Trabajo">Trabajo</button>
-              <button type="button" class="cchip" data-cat="Trámites">Trámites</button>
-              <button type="button" class="cchip" data-cat="Casa">Casa</button>
+            <span>Repetir</span>
+            <div class="chips-select" id="repChips">
+              <button type="button" class="rchip on" data-rep="">No</button>
+              <button type="button" class="rchip" data-rep="day">Diaria</button>
+              <button type="button" class="rchip" data-rep="week">Semanal</button>
+              <button type="button" class="rchip" data-rep="month">Mensual</button>
+              <button type="button" class="rchip" data-rep="year">Anual</button>
             </div>
+            <div class="rep-detail" id="repDetail" hidden>
+              <label class="rep-every">Cada <input type="number" id="repEvery" min="1" max="99" value="1" inputmode="numeric" aria-label="Cada cuántos"> <span id="repUnit">días</span></label>
+              <div class="dow-select" id="repDays" hidden>
+                <button type="button" data-d="1" aria-label="Lunes">L</button>
+                <button type="button" data-d="2" aria-label="Martes">M</button>
+                <button type="button" data-d="3" aria-label="Miércoles">M</button>
+                <button type="button" data-d="4" aria-label="Jueves">J</button>
+                <button type="button" data-d="5" aria-label="Viernes">V</button>
+                <button type="button" data-d="6" aria-label="Sábado">S</button>
+                <button type="button" data-d="0" aria-label="Domingo">D</button>
+              </div>
+            </div>
+            <small class="hint" id="repHint"></small>
           </div>
-
-          <label class="field">
-            <span>Etiquetas <small>(separadas por espacio)</small></span>
-            <input type="text" id="fTags" placeholder="#salud #urgente" autocomplete="off">
-          </label>
 
           <div class="field">
             <span>Subtareas</span>
             <div class="subs-editor" id="subsEditor"></div>
             <div class="sub-add">
-              <input type="text" id="subInput" placeholder="Agregar paso…" autocomplete="off">
+              <input type="text" id="subInput" placeholder="Agregar paso…" autocomplete="off" aria-label="Nuevo paso">
               <button type="button" id="subAddBtn" aria-label="Agregar paso">+</button>
             </div>
           </div>
 
           <label class="field">
-            <span>Avisarme antes</span>
+            <span>Avisarme</span>
             <select id="fRemind">
               <option value="0">A la hora exacta</option>
               <option value="30">30 minutos antes</option>
@@ -153,15 +165,70 @@
     </div>
   </div>
 
+  <!-- Nueva lista de compras -->
+  <div class="sheet-overlay" id="listOverlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="listTitle">
+      <div class="sheet-grip"></div>
+      <h2 id="listTitle">Nueva lista</h2>
+      <form id="listForm">
+        <label class="field">
+          <span>Nombre</span>
+          <input type="text" id="lName" placeholder="Ej: Supermercado" autocomplete="off" required>
+        </label>
+        <div class="sheet-actions">
+          <button type="button" class="btn ghost" id="listCancel">Cancelar</button>
+          <button type="submit" class="btn primary">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Editar ítem de compras -->
+  <div class="sheet-overlay" id="itemOverlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="itemTitle">
+      <div class="sheet-grip"></div>
+      <h2 id="itemTitle">Editar ítem</h2>
+      <form id="itemForm">
+        <label class="field">
+          <span>Producto</span>
+          <input type="text" id="iText" autocomplete="off" required>
+        </label>
+        <div class="field-row">
+          <label class="field"><span>Cantidad</span><input type="text" id="iQty" placeholder="2 kg" autocomplete="off"></label>
+          <label class="field"><span>Pasillo</span><input type="text" id="iAisle" list="aisleList" placeholder="Verdulería" autocomplete="off"></label>
+        </div>
+        <datalist id="aisleList"></datalist>
+        <small class="hint" id="iHint"></small>
+        <div class="sheet-actions">
+          <button type="button" class="btn danger-icon" id="itemDelete" aria-label="Quitar ítem">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          </button>
+          <button type="button" class="btn ghost" id="itemCancel">Cancelar</button>
+          <button type="submit" class="btn primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Note editor sheet -->
   <div class="sheet-overlay" id="noteOverlay" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
       <div class="sheet-grip"></div>
       <h2 id="noteTitle">Nueva nota</h2>
-      <label class="field">
+      <div class="field">
         <span>Escribí libre <small>(la primera línea es el título)</small></span>
-        <textarea id="noteText" rows="9" placeholder="Ideas, links, lo que se te ocurra…" autocomplete="off"></textarea>
-      </label>
+        <div class="note-tools">
+          <button type="button" class="tool" id="noteCheck" title="Agregar casilla">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>
+            Casilla
+          </button>
+          <button type="button" class="tool" id="noteToTask" title="Convertir en tarea">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            Convertir en tarea
+          </button>
+        </div>
+        <textarea id="noteText" rows="9" placeholder="Ideas, links, listas (- [ ] algo)…" autocomplete="off" aria-label="Texto de la nota"></textarea>
+      </div>
 
       <div class="field">
         <span>Imágenes <small>(se achican solas antes de subir)</small></span>
@@ -215,6 +282,19 @@
     </div>
   </div>
 
+  <!-- Archivo de completadas -->
+  <div class="sheet-overlay" id="archOverlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="archTitle">
+      <div class="sheet-grip"></div>
+      <h2 id="archTitle">Archivo</h2>
+      <p class="sync-help">Las tareas completadas pasan acá a los 7 días y se guardan un año. Tocá el círculo para reactivar una.</p>
+      <div id="archList"></div>
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" id="archClose">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Sync sheet -->
   <div class="sheet-overlay" id="syncOverlay" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
@@ -237,7 +317,7 @@
           <span>Web API key</span>
           <input type="text" id="syncKey" placeholder="AIza…" autocomplete="off" spellcheck="false">
         </label>
-        <div class="sheet-actions">
+        <div class="sync-actions">
           <button type="button" class="btn primary" id="syncSaveCfg">Guardar proyecto</button>
         </div>
       </div>
@@ -262,6 +342,11 @@
           Los cambios viajan solos cada pocos segundos y al abrir la app.
         </p>
 
+        <div class="usage" id="syncUsage" hidden>
+          <div class="usage-row"><span>Espacio usado</span><b id="syncUsagePct">0%</b></div>
+          <div class="bar"><i id="syncUsageFill"></i></div>
+        </div>
+
         <div class="sync-actions">
           <button type="button" class="btn ghost" id="syncGen">Generar código</button>
           <button type="button" class="btn ghost" id="syncCopy">Copiar</button>
@@ -282,10 +367,13 @@
     <img id="imgViewerImg" alt="">
   </div>
 
-  <div class="toast" id="toast" hidden></div>
+  <div class="update-bar" id="updateBar" role="status" hidden>
+    <span>Hay una versión nueva de Tudu</span>
+    <button type="button" id="updateBtn">Actualizar</button>
+  </div>
 
-  <script src="js/sync-config.js"></script>
-  <script src="js/sync.js"></script>
-  <script src="js/app.js"></script>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

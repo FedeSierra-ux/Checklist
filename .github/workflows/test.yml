@@ -1,0 +1,25 @@
+name: Tests
+
+# Corre las pruebas de la lógica (parser, repeticiones, merge de la
+# sincronización, modelo, texto y precache del service worker) en cada push
+# y en cada PR. No necesita instalar dependencias: usa el test runner de Node.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Pruebas
+        run: npm test
