@@ -7,21 +7,39 @@ querés, se sincroniza con tus otros dispositivos con un código.
 
 ## Qué hace
 
-- **Semana · Mes · Compras · Notas** en una sola barra de navegación.
-- **Hoy vive dentro de Semana**, como bloque destacado arriba de todo.
+- **Semana · Mes · Compras · Notas** en una barra que entra entera en el celular.
+- **Hoy vive dentro de Semana**, como bloque destacado arriba de todo, con el
+  progreso de *esta* semana.
 - **Prioridades** en 4 niveles con color (alta / media / baja / ninguna); lo
   urgente sube arriba.
 - **Deadlines** con fecha y hora, ordenados por urgencia.
+- **Tareas repetidas**: diarias, de lunes a viernes, *"todos los lunes y
+  jueves"*, *"cada 3 días"*, *"cada mes el 10"*, anuales. Al completarlas
+  vuelven solas en la próxima fecha.
 - **Subtareas / checklist** dentro de cada tarea, con progreso.
-- **Etiquetas** (`#salud`, `#casa`) y **buscador** global.
-- **Escritura natural**: escribís *"mañana 15:00 pedir turno #salud !alta"* y
-  entiende fecha, hora, prioridad y etiqueta solas.
-- **Listas de compras** con ítems tildables.
-- **Notas** de texto libre para ideas y apuntes, con fijado, búsqueda e
-  **imágenes adjuntas** (se achican solas antes de subir).
-- **Notificaciones** antes de cada vencimiento y resumen del día.
+- **Etiquetas** (`#salud`, `#casa`) — reemplazan a las categorías fijas — y
+  **buscador** global que también busca en notas, compras, precios y archivo,
+  con lo encontrado resaltado.
+- **Escritura natural**: *"el viernes a las 5 pedir turno #salud !alta"*,
+  *"en 3 días"*, *"15/10"*, *"3 de noviembre"*, *"a las 9 de la mañana"*,
+  *"todos los días a las 8"*… entiende fecha, hora, repetición, prioridad y
+  etiquetas solas.
+- **Deshacer**: completar, posponer, borrar y vaciar listas muestran
+  "Deshacer" unos segundos (sin cuadros de confirmación).
+- **Completadas** plegadas; a los 7 días pasan solas al **archivo**, desde
+  donde se pueden reactivar.
+- **Compras y Precios** en una sola pestaña: listas con cantidad
+  (*"2 kg papas"*), pasillos, orden arrastrando, "Destildar todo" para reusar la
+  lista del súper y "Borrar tildados". Cada ítem muestra **dónde está más
+  barato** según los precios por kilo que cargaste.
+- **Notas** de texto libre con **casillas** (`- [ ] algo`, se tildan desde la
+  tarjeta), **links** que se pueden tocar, fijado, **imágenes adjuntas** y
+  **"Convertir en tarea"**.
+- **Notificaciones** antes de cada vencimiento, con botones **Completar** y
+  **Posponer 1 h**; tocarlas abre la tarea.
 - **Sincronización opcional** PC ⇆ celular con un código, sin crear cuentas.
 - **Tema claro/oscuro** automático, incluidos los controles nativos.
+- Atajos de teclado en la PC: **N** nueva, **/** buscar, **Esc** cerrar.
 
 ## Sincronizar la PC y el celular
 
@@ -63,6 +81,8 @@ Al conectar un dispositivo elegís qué hacer con lo que ya tenía: **combinar**
 última modificación, y los borrados dejan una "tumba". Si editás la misma tarea
 en los dos lados gana la más reciente; si cada lado editó cosas distintas, se
 conservan las dos; y lo borrado en un dispositivo no revive desde el otro.
+Las escrituras usan una precondición de versión: si otro dispositivo subió algo
+entre la lectura y la escritura, se vuelve a leer y a mezclar en vez de pisarlo.
 
 ### Imágenes en las notas
 
@@ -153,17 +173,35 @@ o con el teléfono conectado: `adb install app-debug.apk`.
 
 ## Cómo está organizado
 
+Sin paso de build: son módulos ES que el navegador (y el APK) cargan tal cual.
+
 ```
 index.html              App (raíz = única fuente de verdad, sirve para la PWA)
 css/styles.css          Estilos (tema claro/oscuro, tipografía Manrope embebida)
-js/app.js               Lógica: tareas, prioridades, Hoy, subtareas, tags,
-                        notas, búsqueda, notificaciones y puente nativo
-js/sync.js              Sincronización entre dispositivos (merge + Firestore)
+js/main.js              Punto de entrada: arma la interfaz y conecta todo
+js/store.js             Estado local (localStorage), guardar y marcas de tiempo
+js/core/                Lógica pura, probada con tests (sin DOM):
+  ├─ parse.js             escritura natural
+  ├─ repeat.js            tareas repetidas
+  ├─ dates.js             fechas, vencimientos y texto de los avisos
+  ├─ model.js             forma del estado, migraciones y archivo
+  ├─ merge.js             conciliación de la sincronización
+  └─ text.js              resaltado, links, checklists y cantidades
+js/ui/                  Pantallas y comportamiento:
+  ├─ tasks.js · task-sheet.js   Semana, Mes, archivo y hoja de tarea
+  ├─ shopping.js                Compras + Precios
+  ├─ notes.js · search.js       Notas y buscador
+  ├─ native.js                  Notificaciones, widget y puente nativo
+  ├─ gestures.js                Swipe y arrastrar al calendario
+  ├─ toast.js                   Avisos y "Deshacer"
+  └─ sync-panel.js · sw-client.js
+js/sync.js              Sincronización entre dispositivos (Firestore REST)
 js/sync-config.js       Project ID y API key de Firebase (opcional)
 firebase/firestore.rules Reglas a publicar en Firestore
-sw.js                   Service worker (cache offline de la PWA)
+sw.js                   Service worker (offline + aviso de versión nueva)
 manifest.webmanifest    Metadatos PWA
 icons/ · assets/fonts/  Íconos y tipografía
+test/                   Pruebas (`npm test`, corren en CI)
 
 capacitor.config.json   Config de Capacitor (webDir = www)
 scripts/copy-web.mjs    Copia la app web a www/ antes de compilar
@@ -171,19 +209,50 @@ android/                Proyecto Android (Capacitor)
   ├─ …/PendientesWidget.java   Widget de pantalla de inicio
   ├─ …/WidgetService.java      Filas del widget (lee los datos de la app)
   └─ …/WidgetBridgePlugin.java Refresca el widget cuando cambian los datos
-.github/workflows/build-apk.yml  Compila el APK en la nube
+.github/workflows/      Tests, APK (debug y release) y publicación en Pages
 ```
 
 `www/` es un artefacto de build (se regenera con `npm run copy:web`) y no se
 versiona.
 
+### Pruebas
+
+```bash
+npm test     # Node 20+, sin instalar nada
+```
+
+Cubren el parser de escritura natural, las repeticiones, el merge de la
+sincronización, el archivo, los textos de los avisos y que el service worker
+precachee todos los módulos. **Si agregás un archivo a `js/`, sumalo a `CORE`
+en `sw.js`** (el test avisa si falta).
+
+### Actualizaciones de la PWA
+
+No hay que subir ninguna versión a mano. Cada vez que se abre la app, el
+service worker compara sus archivos con los del servidor; si cambió alguno,
+baja la versión completa y aparece **"Hay una versión nueva · Actualizar"**.
+
 ## Cómo funcionan las notificaciones y el widget (APK)
 
 - Al guardar o completar tareas, la app **reprograma** en el sistema todas las
-  notificaciones futuras. Por eso disparan aunque la app esté cerrada.
-- La app espeja los pendientes de hoy en `SharedPreferences`; el widget los lee y
-  los muestra. Al tildar en el widget, la tarea se marca y la app se sincroniza al
-  abrirse.
+  notificaciones futuras. Por eso disparan aunque la app esté cerrada. Las
+  tareas sin hora avisan a las 9 de la mañana.
+- Cada notificación trae **Completar** y **Posponer 1 h**; tocarla abre esa
+  tarea.
+- La app espeja en `SharedPreferences` los pendientes de la próxima semana con
+  su fecha, y el widget muestra **los de hoy y los vencidos** según la fecha
+  del teléfono: a la medianoche cambia solo, aunque no abras la app.
+- En el widget, el **círculo** tilda la tarea (queda tachada; tocarlo otra vez
+  la destilda, por si fue sin querer) y la app la completa al abrirse. Tocar el
+  **texto** abre la tarea en la app.
+
+### Tamaño de la sincronización
+
+Todo el estado viaja en un documento de Firestore (límite: 1 MB). Para que no
+crezca sin fin, las completadas se archivan en forma compacta a los 7 días y el
+archivo guarda un año (máximo 1500); si aun así se acercara al límite, se
+recortan primero las entradas más viejas del archivo. El panel ☁ muestra el
+espacio usado.
 
 ## Privacidad
 

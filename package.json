@@ -1,10 +1,11 @@
 {
   "name": "tudu",
   "version": "1.0.0",
-  "description": "App de tareas pendientes con prioridades, vista Hoy, subtareas, etiquetas, notificaciones y widget. Web (PWA) + Android (APK vía Capacitor).",
+  "description": "App de tareas con prioridades, repetidas, subtareas, etiquetas, compras con precios, notas, notificaciones y widget. Web (PWA) + Android (APK vía Capacitor).",
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "TZ=America/Argentina/Buenos_Aires node --test test/*.test.js",
     "copy:web": "node scripts/copy-web.mjs",
     "sync": "npm run copy:web && cap sync android",
     "open:android": "cap open android",

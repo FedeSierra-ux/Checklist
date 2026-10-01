@@ -34,14 +34,19 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
-        <!-- Widget de pantalla de inicio: pendientes de hoy -->
+        <!-- Widget de pantalla de inicio: pendientes de hoy (y vencidos) -->
         <receiver
             android:name=".PendientesWidget"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.pendientes.app.TOGGLE" />
+                <action android:name="com.pendientes.app.OPEN" />
                 <action android:name="com.pendientes.app.REFRESH" />
+                <!-- Cambio de día / hora: recalcular qué es "hoy" -->
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

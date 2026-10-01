@@ -13,7 +13,7 @@
  * Si los dejás vacíos, la app te los pide una sola vez desde el panel de
  * sincronización (☁ en la barra superior) y los guarda en ese dispositivo.
  */
-window.TUDU_SYNC_CONFIG = {
+export default {
   projectId: 'tudu-96f13',
   apiKey: 'AIzaSyDTE8HCuYFBFKY5MggUiy3VjyfzRTlgm7E',
 };
