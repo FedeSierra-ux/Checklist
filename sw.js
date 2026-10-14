@@ -23,6 +23,7 @@ const CORE = [
   './js/store.js',
   './js/sync.js',
   './js/sync-config.js',
+  './js/version.js',
   './js/core/dates.js',
   './js/core/merge.js',
   './js/core/model.js',
