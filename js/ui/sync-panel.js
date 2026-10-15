@@ -4,6 +4,8 @@ import { $, showOverlay, hideOverlay } from './ctx.js';
 import { agoLabel } from '../core/dates.js';
 import { toast } from './toast.js';
 import { Sync } from '../sync.js';
+import { APP_VERSION } from '../version.js';
+import { isNative } from './native.js';
 
 const overlay = () => $('#syncOverlay');
 
@@ -32,6 +34,7 @@ export function renderSync(st = Sync.status()) {
   else txt = `✓ Conectado · última sincronización ${agoLabel(st.last)}`;
   $('#syncState').textContent = txt;
   $('#syncState').classList.toggle('bad', !!st.error);
+  $('#syncVersion').textContent = `Tudu ${APP_VERSION} · ${isNative ? 'app Android' : 'web'}`;
 
   // Cuánto del documento (1 MB) se usa. Lo viejo del archivo se recorta solo.
   const usage = $('#syncUsage');

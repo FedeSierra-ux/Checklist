@@ -87,19 +87,96 @@ function docUrl(path, params = {}) {
   return `https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/documents/${path}?${qs}`;
 }
 
-async function fsReq(method, path, body, params) {
-  let res;
+const TIMEOUT_MS = 20000;
+
+// En el APK los pedidos salen por la red nativa de Android (plugin
+// CapacitorHttp, viene con Capacitor): no depende del WebView ni de CORS.
+// Si el plugin no está o falla, se prueba con fetch del WebView.
+const NativeHttp = () => {
+  const Cap = window.Capacitor;
+  return Cap && Cap.isNativePlatform && Cap.isNativePlatform() ? Cap.Plugins?.CapacitorHttp : null;
+};
+
+// Devuelve { ok, status, txt } o lanza un Error con `net = true` si el
+// pedido no llegó a ningún servidor.
+async function nativeReq(http, method, url, body) {
+  let r;
   try {
-    res = await fetch(docUrl(path, params), {
+    r = await http.request({
+      url, method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      data: body,
+      connectTimeout: TIMEOUT_MS,
+      readTimeout: TIMEOUT_MS,
+    });
+  } catch (e) {
+    const err = new Error(String((e && (e.message || e.code)) || 'error de red'));
+    err.net = true;
+    throw err;
+  }
+  const txt = typeof r.data === 'string' ? r.data : JSON.stringify(r.data ?? null);
+  return { ok: r.status >= 200 && r.status < 300, status: r.status, txt };
+}
+
+async function webReq(method, url, body) {
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl && setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
+      signal: ctl ? ctl.signal : undefined,
     });
+    return { ok: res.ok, status: res.status, txt: await res.text().catch(() => '') };
   } catch (e) {
-    throw new Error('Sin conexión.');
+    const err = new Error(e && e.name === 'AbortError' ? 'timeout' : String((e && e.message) || 'error de red'));
+    err.net = true;
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  if (res.ok) return method === 'DELETE' ? null : res.json().catch(() => null);
-  const txt = await res.text().catch(() => '');
+}
+
+// Traduce una falla de red a algo que diga qué pasó, con el detalle técnico
+// entre paréntesis para poder diagnosticar.
+export function netErrorMessage(detail, online = true) {
+  if (!online) return 'Sin conexión a internet.';
+  const d = String(detail || '');
+  const extra = d ? ` (${d.slice(0, 90)})` : '';
+  if (/timeout|timed out/i.test(d)) return 'El servidor de sincronización no respondió a tiempo. Probá de nuevo.' + extra;
+  if (/resolve host|UnknownHost|NAME_NOT_RESOLVED|No address associated/i.test(d)) {
+    return 'No se encuentra el servidor de sincronización: revisá internet, VPN, bloqueador de anuncios o "DNS privado".' + extra;
+  }
+  if (/SSL|certificate|CertPath|handshake|CERT_/i.test(d)) {
+    return 'Falló la conexión segura: revisá que la fecha y hora del teléfono sean automáticas.' + extra;
+  }
+  return 'No se pudo conectar con el servidor de sincronización.' + extra;
+}
+
+async function fsReq(method, path, body, params) {
+  const url = docUrl(path, params);
+  let res;
+  const http = NativeHttp();
+  try {
+    if (http) {
+      try { res = await nativeReq(http, method, url, body); }
+      catch (e) {
+        if (!e.net) throw e;
+        try { res = await webReq(method, url, body); } catch (e2) { throw e; }
+      }
+    } else {
+      res = await webReq(method, url, body);
+    }
+  } catch (e) {
+    if (!e.net) throw e;
+    throw new Error(netErrorMessage(e.message, typeof navigator === 'undefined' || navigator.onLine !== false));
+  }
+  if (res.ok) {
+    if (method === 'DELETE') return null;
+    try { return JSON.parse(res.txt); } catch (e) { return null; }
+  }
+  const txt = res.txt;
   let msg = '', st = '';
   try { const j = JSON.parse(txt).error; msg = j.message || ''; st = j.status || ''; } catch (e) { /* ignore */ }
   // Precondición fallida: otro dispositivo escribió entre la lectura y esta
